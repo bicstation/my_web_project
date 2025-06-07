@@ -1,49 +1,52 @@
-version: '3.8' # Docker Compose のバージョンを指定
+version: '3.8'
 
 services:
-  # Nginx (ウェブサーバー) サービス
   nginx:
-    image: nginx:latest # Nginx の最新版イメージを使用
+    image: nginx:alpine
+    container_name: my_web_project-nginx
     ports:
-      - "80:80" # ホストPCの80番ポートをコンテナの80番ポートにマッピング
+      - "80:80"
+      - "443:443" # HTTPSも考慮する場合
     volumes:
-      - ./nginx:/etc/nginx/conf.d # ローカルのnginxフォルダをコンテナの設定フォルダにマウント
-      - ./app:/var/www/html # ローカルのappフォルダをコンテナのウェブサイトルートにマウント
+      - ./nginx/conf.d/:/etc/nginx/conf.d/:ro # 各サブドメインのNginx設定をマウント
+      - ./app/public:/var/www/html:ro # PHPアプリケーションの公開ディレクトリを読み込み専用でマウント
     depends_on:
-      - php # php サービスが起動してから起動
-    networks:
-      - web_network # サービス間のネットワーク
+      - php # PHP-FPMコンテナに依存
 
-  # PHP-FPM (PHP実行環境) サービス
   php:
     build:
-      context: ./php # phpフォルダにあるDockerfileを使用
+      context: ./php # php/Dockerfile を使用
       dockerfile: Dockerfile
+    container_name: my_web_project-php
     volumes:
-      - ./app:/var/www/html # ローカルのappフォルダをコンテナのウェブサイトルートにマウント
-    networks:
-      - web_network # サービス間のネットワーク
+      - ./app:/var/www/html:rw # PHPアプリケーションのソースコードを読み書き可能でマウント
+      # 開発中にcomposer installなどを実行するために書き込み権限が必要
+      - ./app/composer.json:/var/www/html/composer.json # composer.json もマウント
+      - ./php/php.ini:/usr/local/etc/php/php.ini # PHP設定ファイル
+    # ports:
+    #   - "9000:9000" # PHP-FPMのポート (通常Nginxから内部的にアクセスされるため、ホストに公開不要なことも多い)
+    depends_on:
+      - mysql # MySQLコンテナに依存
+    environment:
+      # PHPMailerの環境変数もここに追加できますが、config.phpで管理する方がシンプルです
+      # DB_PASSWORDなど、機密情報は.envファイルから読み込むようにする
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envから読み込み
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
 
-  # MySQL (データベース) サービス
   mysql:
-    image: mysql:8.0 # MySQL 8.0 イメージを使用
-    environment: # 環境変数でデータベースの初期設定を行う
-      MYSQL_ROOT_PASSWORD: root_password # ルートユーザーのパスワード
-      MYSQL_DATABASE: my_database # 作成するデータベース名
-      MYSQL_USER: my_user # 作成するユーザー名
-      MYSQL_PASSWORD: my_password # 作成するユーザーのパスワード
-    ports:
-      - "3306:3306" # ホストPCの3306番ポートをコンテナの3306番ポートにマッピング
+    image: mysql:8.0
+    container_name: my_web_project-mysql
+    restart: always
     volumes:
-      - mysql_data:/var/lib/mysql # データベースのデータを永続化するためのボリューム
-    networks:
-      - web_network # サービス間のネットワーク
+      - my_db_data:/var/lib/mysql # データを永続化
+      - ./mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro # MySQL設定ファイル
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
 
-# ネットワークの定義
-networks:
-  web_network:
-    driver: bridge # コンテナ間の通信を可能にするブリッジネットワーク
-
-# ボリュームの定義 (データベースデータを永続化するため)
 volumes:
-  mysql_data: # mysql_dataという名前のボリュームを作成
+  my_db_data: # MySQLデータボリューム

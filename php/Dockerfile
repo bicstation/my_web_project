@@ -1,8 +1,24 @@
 FROM php:8.3-fpm-alpine
-# PHP 8.3 のFPM版イメージ (軽量なAlpine Linuxベース)
 
-# 必要なPHP拡張をインストール (例としてmysqli, pdo_mysql)
-# RUN docker-php-ext-install はスペース区切りで複数の拡張を指定できます
-RUN docker-php-ext-install mysqli pdo pdo_mysql
+# システムパッケージのインストール
+# oniguruma-dev: mbstringの依存関係
+# libzip-dev: zip拡張の依存関係 (将来的にPHPMailerなどで必要になる可能性あり)
+# gd-dev: gd拡張の依存関係
+# libxslt-dev: xsl拡張の依存関係
+# freetype-dev, libjpeg-turbo-dev, libpng-dev: gd拡張の画像処理ライブラリ
+RUN apk add --no-cache \
+    oniguruma-dev \
+    libzip-dev \
+    gd-dev \
+    libxslt-dev \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev && \
+    # 必要なPHP拡張をインストール
+    docker-php-ext-install mysqli pdo pdo_mysql mbstring gd xsl zip && \
+    # composer のインストール
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer && \
+    php -r "unlink('composer-setup.php');"
 
-WORKDIR /var/www/html # コンテナの作業ディレクトリを設定
+WORKDIR /var/www/html
