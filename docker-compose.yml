@@ -1,0 +1,49 @@
+version: '3.8' # Docker Compose のバージョンを指定
+
+services:
+  # Nginx (ウェブサーバー) サービス
+  nginx:
+    image: nginx:latest # Nginx の最新版イメージを使用
+    ports:
+      - "80:80" # ホストPCの80番ポートをコンテナの80番ポートにマッピング
+    volumes:
+      - ./nginx:/etc/nginx/conf.d # ローカルのnginxフォルダをコンテナの設定フォルダにマウント
+      - ./app:/var/www/html # ローカルのappフォルダをコンテナのウェブサイトルートにマウント
+    depends_on:
+      - php # php サービスが起動してから起動
+    networks:
+      - web_network # サービス間のネットワーク
+
+  # PHP-FPM (PHP実行環境) サービス
+  php:
+    build:
+      context: ./php # phpフォルダにあるDockerfileを使用
+      dockerfile: Dockerfile
+    volumes:
+      - ./app:/var/www/html # ローカルのappフォルダをコンテナのウェブサイトルートにマウント
+    networks:
+      - web_network # サービス間のネットワーク
+
+  # MySQL (データベース) サービス
+  mysql:
+    image: mysql:8.0 # MySQL 8.0 イメージを使用
+    environment: # 環境変数でデータベースの初期設定を行う
+      MYSQL_ROOT_PASSWORD: root_password # ルートユーザーのパスワード
+      MYSQL_DATABASE: my_database # 作成するデータベース名
+      MYSQL_USER: my_user # 作成するユーザー名
+      MYSQL_PASSWORD: my_password # 作成するユーザーのパスワード
+    ports:
+      - "3306:3306" # ホストPCの3306番ポートをコンテナの3306番ポートにマッピング
+    volumes:
+      - mysql_data:/var/lib/mysql # データベースのデータを永続化するためのボリューム
+    networks:
+      - web_network # サービス間のネットワーク
+
+# ネットワークの定義
+networks:
+  web_network:
+    driver: bridge # コンテナ間の通信を可能にするブリッジネットワーク
+
+# ボリュームの定義 (データベースデータを永続化するため)
+volumes:
+  mysql_data: # mysql_dataという名前のボリュームを作成
