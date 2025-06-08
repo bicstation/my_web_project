@@ -7,34 +7,24 @@ body {
     flex-direction: column;
     background-color: #f8f9fa;
     font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-    /* モダンなフォント */
 }
 
 /* ヘッダーのカスタマイズ */
 header {
     box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
     position: sticky;
-    /* ヘッダーを常に上部に固定 */
     top: 0;
-    /* 上部に固定 */
-    z-index: 1020;
-    /* Bootstrapのnavbar-fixed-topと同じz-index */
-    /* header .h3 と header .navbar のスタイルはそのまま */
+    z-index: 1020; /* Bootstrapのnavbar-fixed-topと同じz-index */
 }
 
 header .h3 {
     font-weight: 600;
-    /* ロゴの太字 */
 }
 
 header .navbar {
-    /* headerの子要素のnavbarに適用 */
     box-shadow: none;
-    /* 親のheaderにshadowがあるのでnavbarのshadowは不要 */
     margin-top: 0;
-    /* ヘッダーとの間の余白は不要 */
     margin-bottom: 0;
-    /* コンテンツとの重なり防止 */
 }
 
 .navbar .nav-link {
@@ -51,72 +41,37 @@ header .navbar {
 }
 
 /* メインコンテンツとサイドバーのラッパー */
+/* Flexboxの基本設定 */
 #main-content-wrapper {
-    /* HTMLで追加したID */
-    flex-grow: 1;
-    /* 残りの高さを占める */
+    flex-grow: 1; /* 残りの高さを占める */
     display: flex;
-    /* サイドバーとメインコンテンツを横並びにするため */
-    flex-direction: column;
-    /* 小画面では縦並び */
-    min-height: 0;
-    /* Important: flexアイテムが内容で溢れるのを防ぐ */
+    flex-direction: column; /* スマホでは縦並び */
+    min-height: 0; /* flexアイテムが内容で溢れるのを防ぐ */
+    overflow: hidden; /* コンテンツがはみ出さないように */
 }
 
-/* ナビとメインコンテンツを囲むラッパー */
-.content-wrapper {
-    flex-grow: 1;
-    /* 残りの幅を占める */
-    padding: 20px;
-    /* メインコンテンツの基本的なパディング */
-    /* ヘッダーの高さ分、上部にパディングを追加 */
-    padding-top: calc(20px);
-    /* ヘッダー高さ88px + 余白20px */
-    overflow-y: auto;
-    /* ここを追加: 縦方向にスクロールが必要な場合にスクロールバーを表示 */
-    -webkit-overflow-scrolling: touch;
-    /* iOSでのスムーズなスクロール */
+/* メインコンテンツエリアの基本スタイル */
+#main-content-area { /* HTMLで追加したID */
+    flex-grow: 1; /* 残りの幅を占める */
+    padding: 20px; /* メインコンテンツの基本的なパディング */
+    overflow-y: auto; /* 縦方向にスクロールが必要な場合にスクロールバーを表示 */
+    -webkit-overflow-scrolling: touch; /* iOSでのスムーズなスクロール */
+    transition: margin-left 0.3s ease-in-out; /* サイドバー開閉時のアニメーション */
 }
 
 /* サイドバーのカスタマイズ */
 .offcanvas {
-    width: 250px;
+    width: 250px; /* サイドバーの標準幅 */
     box-shadow: 2px 0 5px rgba(0, 0, 0, .1);
-    transition: transform .3s ease-in-out;
-    flex-shrink: 0;
-    /* サイドバーが縮まないように */
     z-index: 1010;
-    /* ヘッダーの下に表示 */
 }
 
+/* OffcanvasのbackdropはBootstrapが制御するので、通常はCSSで触らない */
+/* 意図的に無効にしたい場合は、data-bs-backdrop="false" をHTMLに記述 */
 .offcanvas-backdrop {
-    visibility: hidden;
-    /* デスクトップモードでは常に非表示 */
-    display: none;
-}
-
-/* スマホサイズでOffcanvasが開いたときのみbackdropを表示 */
-@media (max-width: 767.98px) {
-    .offcanvas.show+.offcanvas-backdrop {
-        visibility: visible;
-        display: block;
-        opacity: 0.5;
-        /* 必要に応じて調整 */
-    }
-        /* サイドバーが隠れたときのコンテンツラッパーのスタイル */
-    #main-content-wrapper.sidebar-hidden .content-wrapper {
-        width: 100%; /* 全幅になるように */
-    }
-
-    /* サイドバーが常に表示される時の .offcanvas-start の幅を明確にする */
-    .offcanvas-start {
-        position: relative;
-        transform: none !important;
-        visibility: visible !important;
-        width: 250px; /* ここを明確に指定。flex-shrink: 0; と組み合わせる */
-        flex-shrink: 0; /* サイドバーが縮まないように */
-        margin-right: 20px;
-    }
+    /* 必要なければこのブロックは完全に削除しても良い */
+    /* visibility: hidden; はBootstrapによって自動的に制御される */
+    /* display: none; はBootstrapによって自動的に制御される */
 }
 
 /* サイドバーメニュー (アコーディオン) */
@@ -155,11 +110,9 @@ header .navbar {
 footer {
     border-top: 1px solid #333;
     padding: 20px 0;
-    /* 上下のパディングを追加 */
     background-color: #343a40;
-    /* 背景色を追加 */
     color: #f8f9fa;
-    /* 文字色を追加 */
+    margin-top: auto; /* これでフッターが常に最下部に固定されます */
 }
 
 footer h5 {
@@ -169,7 +122,6 @@ footer h5 {
 }
 
 footer ul li a {
-    /* フッターのリンクの基本スタイル */
     color: #f8f9fa;
     text-decoration: none;
 }
@@ -195,56 +147,79 @@ footer .fab:hover {
     margin-right: 0.5rem !important;
 }
 
+
 /* ----------------------------------------------------- */
 /* レスポンシブ調整 - 中画面以上 (768px) */
 /* ----------------------------------------------------- */
 
 @media (min-width: 768px) {
-
     /* メインのラッパーを横並びにする */
     #main-content-wrapper {
-        flex-direction: row !important;
-        /* サイドバーとメインコンテンツを横並びにする */
+        flex-direction: row !important; /* サイドバーとメインコンテンツを横並びにする */
     }
 
-    /* サイドバーの幅を調整 (Offcanvasの幅を上書き) */
+    /* PCビューでのサイドバーの表示 */
     .offcanvas-start {
-        position: relative;
-        /* flexアイテムとして扱うため */
-        transform: none !important;
-        /* JSで隠す時以外はtransformを適用しない */
-        visibility: visible !important;
-        /* 常に表示 */
-        margin-right: 20px;
-        /* サイドバーとコンテンツの間のマージン */
+        position: sticky; /* スクロールしても固定 */
+        top: 0; 
+        left: 0;
+        height: 100vh; /* ビューポートの高さ全体 */
+        transform: none !important; /* Offcanvasのトランスフォームを強制的に無効化（常時表示）*/
+        visibility: visible !important; /* Offcanvasのvisibilityを強制的に可視に */
+        border-right: 1px solid rgba(0, 0, 0, .1); /* 必要であれば区切り線 */
+        padding: 0; /* Bootstrapのオフキャンバスのパディングをリセット */
+        width: 250px; /* PCでのサイドバーの幅 */
+        flex-shrink: 0; /* サイドバーが縮まないように */
+        transition: transform 0.3s ease-in-out; /* サイドバー開閉時のアニメーション */
     }
 
-    /* サイドバーが隠れたときのスタイル */
-    #main-content-wrapper.sidebar-hidden .offcanvas-start {
-        transform: translateX(-100%) !important;
-        /* サイドバーを完全に隠す */
-        margin-right: 0;
-        /* マージンもリセット */
+    /* メインコンテンツエリアの調整 */
+    #main-content-area {
+        margin-left: 250px; /* サイドバーの幅と同じマージン */
+        flex-grow: 1; /* 残りの幅を占めるように */
+        transition: margin-left 0.3s ease-in-out; /* アニメーション */
     }
 
-    /* サイドバーが隠れたときのコンテンツラッパーのスタイル */
-    #main-content-wrapper.sidebar-hidden .content-wrapper {
-        width: 100%;
-        /* 全幅になるように */
+    /* body に sidebar-collapsed クラスが付与されたときのスタイル */
+    body.sidebar-collapsed .offcanvas-start {
+        transform: translateX(-250px) !important; /* サイドバーを完全に隠す */
+    }
+
+    body.sidebar-collapsed #main-content-area {
+        margin-left: 0 !important; /* サイドバーが隠れたらマージンを0に */
+        flex: 1 1 100% !important; /* flex-grow: 1, flex-shrink: 1, flex-basis: 100% (全幅に広げる) */
+        /* width: 100% !important; */ /* flex: 1 1 100% でうまくいかない場合、こちらも試す */
     }
 
     /* ヘッダーの小画面用サイドバーボタンを非表示に */
-    header .d-md-none {
+    /* より高い優先順位で確実に非表示にする */
+    header button.d-md-none { 
         display: none !important;
     }
 
     /* サイドバー内の閉じるボタンを非表示に */
-    .offcanvas-header .btn-close.d-md-none {
+    .offcanvas-header .btn-close { 
         display: none !important;
     }
 
-    /* ヘッダーの検索窓を大画面で表示 */
-    header .d-md-inline-flex {
+    /* ヘッダーの検索窓を大画面で表示 (d-none d-md-inline-flex クラスを持つ form をターゲット) */
+    header form.d-none.d-md-inline-flex {
         display: inline-flex !important;
+    }
+}
+
+/* スマホサイズ (767.98px 以下) での調整 */
+@media (max-width: 767.98px) {
+    /* PC用トグルボタンをスマホで非表示に */
+    /* id="sidebarToggleBtn" は d-none d-md-inline-flex を持っているので、より確実に非表示に */
+    #sidebarToggleBtn {
+        display: none !important;
+    }
+
+    /* スマホではメインコンテンツエリアのマージンをリセット */
+    #main-content-area {
+        margin-left: 0 !important;
+        flex-grow: 1; /* 必要に応じて残りの幅を占める */
+        width: 100%; /* スマホでは全幅に */
     }
 }

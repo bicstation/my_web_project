@@ -6,7 +6,8 @@
         </button>
 
         <button class="btn btn-outline-light me-3 d-none d-md-inline-flex" id="sidebarToggleBtn" type="button">
-            <i class="fas fa-bars"></i> </button>
+            <i class="fas fa-bars"></i> 
+        </button>
 
         <h3 class="my-0 me-auto"><a href="#" class="text-white text-decoration-none">My Awesome Site</a></h3>
 
