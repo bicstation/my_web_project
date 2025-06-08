@@ -2,51 +2,77 @@ version: '3.8'
 
 services:
   nginx:
-    image: nginx:alpine
-    container_name: my_web_project-nginx
+    build: ./nginx
+    container_name: nginx_container # ★この行を追加
     ports:
       - "80:80"
-      - "443:443" # HTTPSも考慮する場合
     volumes:
-      - ./nginx/conf.d/:/etc/nginx/conf.d/:ro # 各サブドメインのNginx設定をマウント
-      - ./app/public:/var/www/html:ro # PHPアプリケーションの公開ディレクトリを読み込み専用でマウント
+      - ./app:/var/www/html
+      - ./nginx/conf.d:/etc/nginx/conf.d
     depends_on:
-      - php # PHP-FPMコンテナに依存
+      - php
+      - mysql
+      - phpmyadmin
+      - wordpress
+    networks:
+      - app-network
 
   php:
-    build:
-      context: ./php # php/Dockerfile を使用
-      dockerfile: Dockerfile
-    container_name: my_web_project-php
+    build: ./php
     volumes:
-      - ./app:/var/www/html:rw # PHPアプリケーションのソースコードを読み書き可能でマウント
-      # 開発中にcomposer installなどを実行するために書き込み権限が必要
-      - ./app/composer.json:/var/www/html/composer.json # composer.json もマウント
-      - ./php/php.ini:/usr/local/etc/php/php.ini # PHP設定ファイル
-    # ports:
-    #   - "9000:9000" # PHP-FPMのポート (通常Nginxから内部的にアクセスされるため、ホストに公開不要なことも多い)
-    depends_on:
-      - mysql # MySQLコンテナに依存
+      - ./app:/var/www/html
     environment:
-      # PHPMailerの環境変数もここに追加できますが、config.phpで管理する方がシンプルです
-      # DB_PASSWORDなど、機密情報は.envファイルから読み込むようにする
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envから読み込み
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    networks:
+      - app-network
 
   mysql:
     image: mysql:8.0
-    container_name: my_web_project-mysql
-    restart: always
-    volumes:
-      - my_db_data:/var/lib/mysql # データを永続化
-      - ./mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro # MySQL設定ファイル
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - app-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
+    networks:
+      - app-network
+
+  # WordPress サービス
+  wordpress:
+    image: wordpress:latest
+    container_name: wordpress_container
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_NAME: tiper
+      WORDPRESS_DB_USER: tiper
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - wordpress_data:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
-  my_db_data: # MySQLデータボリューム
+  mysql_data:
+  wordpress_data:

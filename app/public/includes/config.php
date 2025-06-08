@@ -5,13 +5,13 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 
 // データベース接続情報
-define('DB_SERVER', 'mysql');
-define('DB_USERNAME', 'tiper');
-define('DB_PASSWORD', '1492nabe'); // .env と docker-compose.yml に設定したもの
-define('DB_NAME', 'tiper');
+define('DB_HOST', getenv('DB_HOST'));
+define('DB_USER', getenv('DB_USER'));
+define('DB_PASSWORD', getenv('DB_PASSWORD'));
+define('DB_NAME', getenv('DB_NAME'));
 
-// データベース接続
-$conn = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
+// データベース接続の確立
+$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 
 // 接続エラーをチェック
 if ($conn->connect_error) {

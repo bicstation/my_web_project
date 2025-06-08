@@ -1,0 +1,250 @@
+/* my_web_project/app/public/css/style.css */
+
+/* 全体の基本設定 */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    /* モダンなフォント */
+}
+
+/* ヘッダーのカスタマイズ */
+header {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+    position: sticky;
+    /* ヘッダーを常に上部に固定 */
+    top: 0;
+    /* 上部に固定 */
+    z-index: 1020;
+    /* Bootstrapのnavbar-fixed-topと同じz-index */
+    /* header .h3 と header .navbar のスタイルはそのまま */
+}
+
+header .h3 {
+    font-weight: 600;
+    /* ロゴの太字 */
+}
+
+header .navbar {
+    /* headerの子要素のnavbarに適用 */
+    box-shadow: none;
+    /* 親のheaderにshadowがあるのでnavbarのshadowは不要 */
+    margin-top: 0;
+    /* ヘッダーとの間の余白は不要 */
+    margin-bottom: 0;
+    /* コンテンツとの重なり防止 */
+}
+
+.navbar .nav-link {
+    font-weight: 500;
+}
+
+.navbar .dropdown-menu {
+    border-radius: 0.5rem;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, .1);
+}
+
+.navbar .dropdown-item:hover {
+    background-color: #e9ecef;
+}
+
+/* メインコンテンツとサイドバーのラッパー */
+#main-content-wrapper {
+    /* HTMLで追加したID */
+    flex-grow: 1;
+    /* 残りの高さを占める */
+    display: flex;
+    /* サイドバーとメインコンテンツを横並びにするため */
+    flex-direction: column;
+    /* 小画面では縦並び */
+    min-height: 0;
+    /* Important: flexアイテムが内容で溢れるのを防ぐ */
+}
+
+/* ナビとメインコンテンツを囲むラッパー */
+.content-wrapper {
+    flex-grow: 1;
+    /* 残りの幅を占める */
+    padding: 20px;
+    /* メインコンテンツの基本的なパディング */
+    /* ヘッダーの高さ分、上部にパディングを追加 */
+    padding-top: calc(20px);
+    /* ヘッダー高さ88px + 余白20px */
+    overflow-y: auto;
+    /* ここを追加: 縦方向にスクロールが必要な場合にスクロールバーを表示 */
+    -webkit-overflow-scrolling: touch;
+    /* iOSでのスムーズなスクロール */
+}
+
+/* サイドバーのカスタマイズ */
+.offcanvas {
+    width: 250px;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, .1);
+    transition: transform .3s ease-in-out;
+    flex-shrink: 0;
+    /* サイドバーが縮まないように */
+    z-index: 1010;
+    /* ヘッダーの下に表示 */
+}
+
+.offcanvas-backdrop {
+    visibility: hidden;
+    /* デスクトップモードでは常に非表示 */
+    display: none;
+}
+
+/* スマホサイズでOffcanvasが開いたときのみbackdropを表示 */
+@media (max-width: 767.98px) {
+    .offcanvas.show+.offcanvas-backdrop {
+        visibility: visible;
+        display: block;
+        opacity: 0.5;
+        /* 必要に応じて調整 */
+    }
+        /* サイドバーが隠れたときのコンテンツラッパーのスタイル */
+    #main-content-wrapper.sidebar-hidden .content-wrapper {
+        width: 100%; /* 全幅になるように */
+    }
+
+    /* サイドバーが常に表示される時の .offcanvas-start の幅を明確にする */
+    .offcanvas-start {
+        position: relative;
+        transform: none !important;
+        visibility: visible !important;
+        width: 250px; /* ここを明確に指定。flex-shrink: 0; と組み合わせる */
+        flex-shrink: 0; /* サイドバーが縮まないように */
+        margin-right: 20px;
+    }
+}
+
+/* サイドバーメニュー (アコーディオン) */
+.accordion-button {
+    font-weight: 600;
+}
+
+.accordion-body ul li a {
+    padding-left: 1rem;
+    font-size: 0.95em;
+    border-left: 3px solid transparent;
+    transition: border-left-color .2s ease-in-out;
+}
+
+.accordion-body ul li a:hover {
+    border-left-color: #007bff;
+    color: #007bff !important;
+    background-color: #e9ecef;
+}
+
+/* パンくずリストのカスタマイズ */
+.breadcrumb {
+    font-size: 0.9em;
+}
+
+.breadcrumb-item a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.breadcrumb-item.active {
+    color: #6c757d;
+}
+
+/* フッターのカスタマイズ */
+footer {
+    border-top: 1px solid #333;
+    padding: 20px 0;
+    /* 上下のパディングを追加 */
+    background-color: #343a40;
+    /* 背景色を追加 */
+    color: #f8f9fa;
+    /* 文字色を追加 */
+}
+
+footer h5 {
+    color: #007bff;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+footer ul li a {
+    /* フッターのリンクの基本スタイル */
+    color: #f8f9fa;
+    text-decoration: none;
+}
+
+footer ul li a:hover {
+    color: #ced4da !important;
+}
+
+footer .fab {
+    transition: color .2s ease-in-out;
+}
+
+footer .fab:hover {
+    color: #007bff;
+}
+
+/* アイコンとテキストの間隔 */
+.me-1 {
+    margin-right: 0.25rem !important;
+}
+
+.me-2 {
+    margin-right: 0.5rem !important;
+}
+
+/* ----------------------------------------------------- */
+/* レスポンシブ調整 - 中画面以上 (768px) */
+/* ----------------------------------------------------- */
+
+@media (min-width: 768px) {
+
+    /* メインのラッパーを横並びにする */
+    #main-content-wrapper {
+        flex-direction: row !important;
+        /* サイドバーとメインコンテンツを横並びにする */
+    }
+
+    /* サイドバーの幅を調整 (Offcanvasの幅を上書き) */
+    .offcanvas-start {
+        position: relative;
+        /* flexアイテムとして扱うため */
+        transform: none !important;
+        /* JSで隠す時以外はtransformを適用しない */
+        visibility: visible !important;
+        /* 常に表示 */
+        margin-right: 20px;
+        /* サイドバーとコンテンツの間のマージン */
+    }
+
+    /* サイドバーが隠れたときのスタイル */
+    #main-content-wrapper.sidebar-hidden .offcanvas-start {
+        transform: translateX(-100%) !important;
+        /* サイドバーを完全に隠す */
+        margin-right: 0;
+        /* マージンもリセット */
+    }
+
+    /* サイドバーが隠れたときのコンテンツラッパーのスタイル */
+    #main-content-wrapper.sidebar-hidden .content-wrapper {
+        width: 100%;
+        /* 全幅になるように */
+    }
+
+    /* ヘッダーの小画面用サイドバーボタンを非表示に */
+    header .d-md-none {
+        display: none !important;
+    }
+
+    /* サイドバー内の閉じるボタンを非表示に */
+    .offcanvas-header .btn-close.d-md-none {
+        display: none !important;
+    }
+
+    /* ヘッダーの検索窓を大画面で表示 */
+    header .d-md-inline-flex {
+        display: inline-flex !important;
+    }
+}
