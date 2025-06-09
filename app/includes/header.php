@@ -1,15 +1,15 @@
-<header class="py-3 bg-primary text-white">
+<header class="py-3 bg-primary text-white grid-header">
     <div class="container-fluid d-flex justify-content-between align-items-center">
 
-        <button class="btn btn-outline-light d-md-none me-3" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas" aria-controls="sidebarOffcanvas">
+        <button class="btn btn-outline-light d-md-none me-3" type="button" data-bs-toggle="offcanvas" data-bs-target="#myCustomSidebar" aria-controls="myCustomSidebar">
             <i class="fas fa-bars"></i>
         </button>
 
-        <button class="btn btn-outline-light me-3 d-none d-md-inline-flex" id="sidebarToggleBtn" type="button">
-            <i class="fas fa-bars"></i> 
+        <button class="btn btn-outline-light me-3 d-none d-md-inline-flex" id="myCustomSidebarToggleBtn" type="button">
+            <i class="fas fa-bars"></i>
         </button>
 
-        <h3 class="my-0 me-auto"><a href="#" class="text-white text-decoration-none">My Awesome Site</a></h3>
+        <h3 class="my-0 me-auto"><a href="/" class="text-white text-decoration-none"><?= $pageTitle; ?></a></h3>
 
         <nav class="navbar navbar-expand-md navbar-dark p-0">
             <div class="collapse navbar-collapse" id="navbarNav">

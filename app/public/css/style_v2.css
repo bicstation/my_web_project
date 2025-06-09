@@ -1,0 +1,230 @@
+/* my_web_project/app/public/css/style_v2.css */
+
+/* 全体の基本設定 */
+body {
+    min-height: 100vh;
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    margin: 0; /* bodyのデフォルトマージンをリセット */
+    padding: 0; /* bodyのデフォルトパディングをリセット */
+}
+
+/* ヘッダーのカスタマイズ */
+header {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+    z-index: 1020; /* Bootstrapのnavbar-fixed-topと同じz-index */
+    /* position: sticky; top: 0; は、Gridレイアウトで grid-area を使うため不要 */
+}
+
+header .h3 {
+    font-weight: 600;
+}
+
+header .navbar {
+    box-shadow: none;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.navbar .nav-link {
+    font-weight: 500;
+}
+
+.navbar .dropdown-menu {
+    border-radius: 0.5rem;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, .1);
+}
+
+.navbar .dropdown-item:hover {
+    background-color: #e9ecef;
+}
+
+/* #main-content-wrapper はHTMLから削除されたため、このブロックは不要 */
+/* #main-content-wrapper {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+} */
+
+/* メインコンテンツエリアの基本スタイル */
+#main-content-area { /* HTMLで追加したID */
+    padding: 20px; /* メインコンテンツの基本的なパディング */
+    overflow-y: auto; /* 縦方向にスクロールが必要な場合にスクロールバーを表示 */
+    -webkit-overflow-scrolling: touch; /* iOSでのスムーズなスクロール */
+    /* flex-grow, transition, margin-left は Gridレイアウトで制御されるため不要 */
+}
+
+/* サイドバーのカスタマイズ */
+.my-custom-sidebar {
+    width: 250px; /* サイドバーの標準幅 */
+    box-shadow: 2px 0 5px rgba(0, 0, 0, .1);
+    z-index: 1010;
+    /* transition は Gridレイアウトでbodyに設定されるため不要 */
+}
+
+/* サイドバーメニュー (アコーディオン) */
+.accordion-button {
+    font-weight: 600;
+}
+
+.accordion-body ul li a {
+    padding-left: 1rem;
+    font-size: 0.95em;
+    border-left: 3px solid transparent;
+    transition: border-left-color .2s ease-in-out;
+}
+
+.accordion-body ul li a:hover {
+    border-left-color: #007bff;
+    color: #007bff !important;
+    background-color: #e9ecef;
+}
+
+/* パンくずリストのカスタマイズ */
+.breadcrumb {
+    font-size: 0.9em;
+}
+
+.breadcrumb-item a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.breadcrumb-item.active {
+    color: #6c757d;
+}
+
+/* フッターのカスタマイズ */
+footer {
+    border-top: 1px solid #333;
+    padding: 20px 0;
+    background-color: #343a40;
+    color: #f8f9fa;
+    /* margin-top: auto; はGridレイアウトで制御されるため不要 */
+}
+
+footer h5 {
+    color: #007bff;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+footer ul li a {
+    color: #f8f9fa;
+    text-decoration: none;
+}
+
+footer ul li a:hover {
+    color: #ced4da !important;
+}
+
+footer .fab {
+    transition: color .2s ease-in-out;
+}
+
+footer .fab:hover {
+    color: #007bff;
+}
+
+/* アイコンとテキストの間隔 */
+.me-1 {
+    margin-right: 0.25rem !important;
+}
+
+.me-2 {
+    margin-right: 0.5rem !important;
+}
+
+
+/* ----------------------------------------------------- */
+/* レスポンシブ調整 - 中画面以上 (768px) */
+/* ----------------------------------------------------- */
+
+@media (min-width: 768px) {
+    /* BodyをGridコンテナにする */
+    body {
+        display: grid;
+        /* グリッドテンプレートエリアの定義 */
+        grid-template-areas:
+            "header header"
+            "sidebar main"
+            "footer footer";
+        /* 各行と列のサイズ定義 */
+        grid-template-rows: auto 1fr auto; /* header, footer はコンテンツの高さ、main は残りの高さ */
+        grid-template-columns: 250px 1fr; /* sidebar は250px、main は残りの幅 */
+        /* サイドバーが閉じる際のアニメーションをbodyに設定 */
+        transition: grid-template-columns 0.3s ease-in-out;
+    }
+
+    /* 各要素をグリッドエリアに配置 */
+    .grid-header {
+        grid-area: header;
+    }
+
+    .grid-sidebar {
+        grid-area: sidebar;
+        position: sticky; /* サイドバーをスクロールで固定 */
+        top: var(--header-height, 0px); /* JavaScriptで設定されるCSS変数を使用。ヘッダーのすぐ下から固定 */
+        /* height はJSで計算して設定されるため、ここでは不要（calc(100vh - headerHeight) になる）*/
+        border-right: 1px solid rgba(0, 0, 0, .1); /* 必要であれば区切り線 */
+        overflow-y: auto; /* サイドバーの内容が溢れたらスクロール */
+        background-color: var(--bs-body-bg, #f8f9fa); /* 背景色をbodyに合わせるか、bg-lightで固定 */
+    }
+
+    .grid-main {
+        grid-area: main;
+        /* flex-grow, margin-left はGridで管理されるため不要 */
+    }
+
+    .grid-footer {
+        grid-area: footer;
+    }
+
+    /* body に sidebar-collapsed クラスが付与されたときのスタイル */
+    body.sidebar-collapsed {
+        grid-template-columns: 0px 1fr; /* サイドバーの幅を0にし、メインコンテンツを全幅に */
+        /* サイドバーの transform は不要、Gridが幅を0にする */
+    }
+
+    /* PCビューでのOffcanvas（サイドバー）の表示調整 */
+    .my-custom-sidebar.offcanvas { /* .my-custom-sidebar-start はHTMLから削除 */
+        visibility: visible !important;
+        transform: translateX(0) !important; /* Gridが幅を0にするので、transformは不要 */
+        /* offcanvasのデフォルトスタイルを上書き */
+        border-right: 1px solid rgba(0,0,0,.175); /* Bootstrap offcanvasのborder */
+    }
+
+    /* ヘッダーの小画面用サイドバーボタンを非表示に */
+    header button.d-md-none {
+        display: none !important;
+    }
+
+    /* サイドバー内の閉じるボタンを非表示に */
+    .my-custom-sidebar .offcanvas-header .btn-close {
+        display: none !important;
+    }
+
+    /* ヘッダーの検索窓を大画面で表示 */
+    header form.d-none.d-md-inline-flex {
+        display: inline-flex !important;
+    }
+}
+
+/* スマホサイズ (767.98px 以下) での調整 */
+@media (max-width: 767.98px) {
+    body {
+        display: flex; /* スマホではFlexboxに戻すか、必要なら別のGrid定義を行う */
+        flex-direction: column; /* 縦並び */
+        /* --header-height 変数はスマホでは使用しないため、デフォルト値が適用されるか、JSで設定しないように制御 */
+    }
+
+    /* PC用トグルボタンをスマホで非表示に */
+    #myCustomSidebarToggleBtn {
+        display: none !important;
+    }
+
+    /* スマホではメインコンテンツエリアのマージンをリセット */
+    /* GridレイアウトからFlexboxに戻るため、margin-left: 0; はデフォルトで適用される */
+    /* #main-content-area に特別なマージンは不要 */
+}

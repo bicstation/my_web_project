@@ -1,6 +1,6 @@
-<div class="offcanvas offcanvas-start bg-light" tabindex="-1" id="sidebarOffcanvas" aria-labelledby="sidebarOffcanvasLabel">
+<aside class="my-custom-sidebar offcanvas offcanvas-start bg-light grid-sidebar" tabindex="-1" id="myCustomSidebar" aria-labelledby="myCustomSidebarLabel">
     <div class="offcanvas-header">
-        <h5 class="offcanvas-title" id="sidebarOffcanvasLabel">サイドメニュー</h5>
+        <h5 class="offcanvas-title" id="myCustomSidebarLabel">サイドメニュー</h5>
         <button type="button" class="btn-close text-reset d-md-none" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     <div class="offcanvas-body">
@@ -53,4 +53,4 @@
             </div>
         </div>
     </div>
-</div>
+</aside>

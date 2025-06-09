@@ -1,4 +1,4 @@
-<main class="p-3">
+<main class="p-3 grid-main" id="main-content-area">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
             <li class="breadcrumb-item"><a href="/"><i class="fas fa-home me-1"></i>ホーム</a></li>

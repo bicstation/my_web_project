@@ -1,4 +1,4 @@
-<footer class="bg-dark text-white py-4 mt-auto">
+<footer class="bg-dark text-white py-4 mt-auto grid-footer">
     <div class="container">
         <div class="row">
             <div class="col-md-4 mb-3 mb-md-0">
@@ -21,7 +21,7 @@
 <li><a href="http://blog.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-blog me-2"></i>blog.tipers.live (ブログ)</a></li>
 
 <li><a href="http://tipers.live:8080/" class="text-white text-decoration-none"><i class="fas fa-database me-2"></i>phpMyAdmin (開発用)</a></li>
-                    </ul>
+                </ul>
             </div>
             <div class="col-md-4 mb-3 mb-md-0">
                 <h5><i class="fas fa-info-circle me-2"></i>一般リンク</h5>
