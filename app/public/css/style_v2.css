@@ -2,7 +2,7 @@
 
 /* 全体の基本設定 */
 body {
-    min-height: 100vh;
+    min-height: 100vh; /* 最低でもビューポートの高さ */
     background-color: #f8f9fa;
     font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
     margin: 0; /* bodyのデフォルトマージンをリセット */
@@ -13,7 +13,6 @@ body {
 header {
     box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
     z-index: 1020; /* Bootstrapのnavbar-fixed-topと同じz-index */
-    /* position: sticky; top: 0; は、Gridレイアウトで grid-area を使うため不要 */
 }
 
 header .h3 {
@@ -39,20 +38,11 @@ header .navbar {
     background-color: #e9ecef;
 }
 
-/* #main-content-wrapper はHTMLから削除されたため、このブロックは不要 */
-/* #main-content-wrapper {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-} */
-
 /* メインコンテンツエリアの基本スタイル */
 #main-content-area { /* HTMLで追加したID */
     padding: 20px; /* メインコンテンツの基本的なパディング */
-    overflow-y: auto; /* 縦方向にスクロールが必要な場合にスクロールバーを表示 */
-    -webkit-overflow-scrolling: touch; /* iOSでのスムーズなスクロール */
-    /* flex-grow, transition, margin-left は Gridレイアウトで制御されるため不要 */
+    /* overflow-y: auto; はGridレイアウトのボディで制御されるため、ここでの設定は不要 */
+    /* -webkit-overflow-scrolling: touch; もbodyのスクロールに任せる */
 }
 
 /* サイドバーのカスタマイズ */
@@ -60,7 +50,6 @@ header .navbar {
     width: 250px; /* サイドバーの標準幅 */
     box-shadow: 2px 0 5px rgba(0, 0, 0, .1);
     z-index: 1010;
-    /* transition は Gridレイアウトでbodyに設定されるため不要 */
 }
 
 /* サイドバーメニュー (アコーディオン) */
@@ -101,7 +90,7 @@ footer {
     padding: 20px 0;
     background-color: #343a40;
     color: #f8f9fa;
-    /* margin-top: auto; はGridレイアウトで制御されるため不要 */
+    /* mt-auto はFlexboxユーティリティのため、Gridレイアウトでは grid-template-rows で制御される */
 }
 
 footer h5 {
@@ -155,18 +144,26 @@ footer .fab:hover {
         grid-template-columns: 250px 1fr; /* sidebar は250px、main は残りの幅 */
         /* サイドバーが閉じる際のアニメーションをbodyに設定 */
         transition: grid-template-columns 0.3s ease-in-out;
+        /* Gridコンテナ全体をスクロールできるように、bodyの高さがコンテンツに合わせて伸びるようにする */
+        height: auto; /* コンテンツに合わせて自動で高さが伸びるように */
+        overflow-y: auto; /* bodyにスクロールバーを持たせることで、stickyが正しく機能 */
     }
 
     /* 各要素をグリッドエリアに配置 */
     .grid-header {
         grid-area: header;
+        position: sticky; /* ヘッダーを常に上部に固定 */
+        top: 0;
+        z-index: 1020; /* 他の要素より手前に表示 */
     }
 
     .grid-sidebar {
         grid-area: sidebar;
         position: sticky; /* サイドバーをスクロールで固定 */
-        top: var(--header-height, 0px); /* JavaScriptで設定されるCSS変数を使用。ヘッダーのすぐ下から固定 */
-        /* height はJSで計算して設定されるため、ここでは不要（calc(100vh - headerHeight) になる）*/
+        /* top: var(--header-height, 0px); JavaScriptで設定されるCSS変数を使用。ヘッダーのすぐ下から固定 */
+        /* height: calc(100vh - var(--header-height, 0px)); ビューポート高さからヘッダー高さを引いた値に固定 */
+        top: 96px; /* ヘッダーの高さが96pxとのことなので、仮に直接指定 */
+        height: calc(100vh - 96px); /* ここも合わせて変更 */
         border-right: 1px solid rgba(0, 0, 0, .1); /* 必要であれば区切り線 */
         overflow-y: auto; /* サイドバーの内容が溢れたらスクロール */
         background-color: var(--bs-body-bg, #f8f9fa); /* 背景色をbodyに合わせるか、bg-lightで固定 */
@@ -174,7 +171,6 @@ footer .fab:hover {
 
     .grid-main {
         grid-area: main;
-        /* flex-grow, margin-left はGridで管理されるため不要 */
     }
 
     .grid-footer {
@@ -184,15 +180,16 @@ footer .fab:hover {
     /* body に sidebar-collapsed クラスが付与されたときのスタイル */
     body.sidebar-collapsed {
         grid-template-columns: 0px 1fr; /* サイドバーの幅を0にし、メインコンテンツを全幅に */
-        /* サイドバーの transform は不要、Gridが幅を0にする */
     }
 
     /* PCビューでのOffcanvas（サイドバー）の表示調整 */
-    .my-custom-sidebar.offcanvas { /* .my-custom-sidebar-start はHTMLから削除 */
+    .my-custom-sidebar.offcanvas {
         visibility: visible !important;
-        transform: translateX(0) !important; /* Gridが幅を0にするので、transformは不要 */
-        /* offcanvasのデフォルトスタイルを上書き */
+        transform: translateX(0) !important;
         border-right: 1px solid rgba(0,0,0,.175); /* Bootstrap offcanvasのborder */
+        position: sticky !important; /* Offcanvasのposition:fixedを上書きしてstickyを強制 */
+        top: 96px !important; /* ★★★ ここに追記/再確認: Offcanvasのtopも強制的に上書き ★★★ */
+        height: calc(100vh - 96px) !important; /* ★★★ ここに追記: Offcanvasのheightも強制的に上書き ★★★ */
     }
 
     /* ヘッダーの小画面用サイドバーボタンを非表示に */
@@ -216,15 +213,10 @@ footer .fab:hover {
     body {
         display: flex; /* スマホではFlexboxに戻すか、必要なら別のGrid定義を行う */
         flex-direction: column; /* 縦並び */
-        /* --header-height 変数はスマホでは使用しないため、デフォルト値が適用されるか、JSで設定しないように制御 */
     }
 
     /* PC用トグルボタンをスマホで非表示に */
     #myCustomSidebarToggleBtn {
         display: none !important;
     }
-
-    /* スマホではメインコンテンツエリアのマージンをリセット */
-    /* GridレイアウトからFlexboxに戻るため、margin-left: 0; はデフォルトで適用される */
-    /* #main-content-area に特別なマージンは不要 */
 }
