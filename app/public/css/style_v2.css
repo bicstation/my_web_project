@@ -2,14 +2,11 @@
 
 /* 全体の基本設定 */
 body {
-    min-height: 100vh; /* ビューポートの高さの最低値を保証 */
+    min-height: 100vh; /* 最低でもビューポートの高さ */
     background-color: #f8f9fa;
     font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
     margin: 0; /* bodyのデフォルトマージンをリセット */
     padding: 0; /* bodyのデフォルトパディングをリセット */
-    /* ★★★ 削除/コメントアウト ★★★ */
-    /* height: 100vh; */
-    /* overflow-y: hidden; */
 }
 
 /* ヘッダーのカスタマイズ */
@@ -91,6 +88,7 @@ footer {
     padding: 20px 0;
     background-color: #343a40;
     color: #f8f9fa;
+    /* mt-auto はFlexboxユーティリティのため、Gridレイアウトでは grid-template-rows で制御される */
 }
 
 footer h5 {
@@ -144,10 +142,9 @@ footer .fab:hover {
         grid-template-columns: 250px 1fr; /* sidebar は250px、main は残りの幅 */
         /* サイドバーが閉じる際のアニメーションをbodyに設定 */
         transition: grid-template-columns 0.3s ease-in-out;
-        /* height と overflow-y はbody全体で既に定義済み（再定義不要） */
-        /* ここはbodyにheight:100vh; overflow-y:hidden;がある前提なので、上記で削除した場合、再評価 */
-        height: 100vh; /* PC版ではGridのためにheight: 100vh;を適用 */
-        overflow-y: hidden; /* PC版ではbodyのスクロールを禁止 */
+        /* Gridコンテナ全体をスクロールできるように、bodyの高さがコンテンツに合わせて伸びるようにする */
+        height: auto; /* コンテンツに合わせて自動で高さが伸びるように */
+        overflow-y: auto; /* bodyにスクロールバーを持たせることで、stickyが正しく機能 */
     }
 
     /* 各要素をグリッドエリアに配置 */
@@ -161,8 +158,8 @@ footer .fab:hover {
     .grid-sidebar {
         grid-area: sidebar;
         position: sticky; /* サイドバーをスクロールで固定 */
-        top: 96px !important; /* ヘッダーの高さが96pxとのことなので、直接指定 + importantで強制 */
-        height: calc(100vh - 96px) !important; /* ビューポート高さからヘッダー高さを引いた値に固定 + importantで強制 */
+        top: 96px; /* ヘッダーの高さに合わせる */
+        height: calc(100vh - 96px); /* ビューポート高さからヘッダー高さを引いた値に固定 */
         border-right: 1px solid rgba(0, 0, 0, .1); /* 必要であれば区切り線 */
         overflow-y: auto; /* サイドバーの内容が溢れたらスクロール */
         background-color: var(--bs-body-bg, #f8f9fa); /* 背景色をbodyに合わせるか、bg-lightで固定 */
@@ -170,6 +167,9 @@ footer .fab:hover {
 
     .grid-main {
         grid-area: main;
+        overflow-y: auto; /* メインコンテンツエリアでスクロールを管理 */
+        min-height: calc(100vh - 96px - 70px); /* 例: 100vh - header_height - footer_height */
+                                                /* ここはフッターの実際の高さに合わせて調整してください */
     }
 
     .grid-footer {
@@ -187,8 +187,9 @@ footer .fab:hover {
         transform: translateX(0) !important;
         border-right: 1px solid rgba(0,0,0,.175); /* Bootstrap offcanvasのborder */
         position: sticky !important; /* Offcanvasのposition:fixedを上書きしてstickyを強制 */
-        top: 96px !important; /* ★★★ ここに追記/再確認: Offcanvasのtopも強制的に上書き ★★★ */
-        height: calc(100vh - 96px) !important; /* ★★★ ここに追記: Offcanvasのheightも強制的に上書き ★★★ */
+        top: 96px !important; /* Offcanvasのtopも強制的に上書き */
+        height: calc(100vh - 96px) !important; /* Offcanvasのheightも強制的に上書き */
+        z-index: 1050 !important; /* PC版Offcanvasもz-indexを高く設定 */
     }
 
     /* ヘッダーの小画面用サイドバーボタンを非表示に */
@@ -209,7 +210,6 @@ footer .fab:hover {
 
 /* スマホサイズ (767.98px 以下) での調整 */
 @media (max-width: 767.98px) {
-
     body {
         display: flex; /* スマホではFlexboxに戻すか、必要なら別のGrid定義を行う */
         flex-direction: column; /* 縦並び */
@@ -219,6 +219,7 @@ footer .fab:hover {
     #myCustomSidebarToggleBtn {
         display: none !important;
     }
+
     /* スマホ版 Offcanvas 自体の z-index を強制的に高く設定 */
     .my-custom-sidebar.offcanvas {
         z-index: 1050 !important;
