@@ -1,3 +1,5 @@
+# docker-compose.yml
+
 version: '3.8'
 
 services:
@@ -8,9 +10,9 @@ services:
       - "80:80"
     volumes:
       # メインアプリケーションのpublicディレクトリへのマウント
-      - ./app/public:/var/www/html/public 
+      - ./app/public:/var/www/html/public
       # WordPressブログ用のディレクトリへのマウント（Nginxがアクセスするパス）
-      - ./wordpress_blog:/var/www/html/blog 
+      - ./wordpress_blog:/var/www/html/blog
       # Nginxの設定ファイルディレクトリへのマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
     depends_on:
@@ -25,9 +27,9 @@ services:
     build: ./php
     volumes:
       # メインアプリケーションのルートディレクトリへのマウント
-      - ./app:/var/www/html 
+      - ./app:/var/www/html
       # WordPressブログ用のディレクトリへのマウント（PHP-FPMがアクセスするパス）
-      - ./wordpress_blog:/var/www/html/blog 
+      - ./wordpress_blog:/var/www/html/blog
     environment:
       DB_HOST: ${DB_HOST}
       DB_USER: ${DB_USER}
@@ -38,9 +40,13 @@ services:
 
   mysql:
     image: mysql:8.0
+    container_name: my_web_project-mysql-1 # コンテナ名を明示的に指定（推奨）
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # .envのDB_PASSWORDを使用
-      MYSQL_DATABASE: ${DB_NAME} # メインアプリケーションのDB名
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
+      # WordPressが使用するデータベースとユーザーをMySQLコンテナに明示的に作成させる
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}
+      MYSQL_USER: ${WORDPRESS_DB_USER}
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
@@ -52,7 +58,7 @@ services:
     image: phpmyadmin/phpmyadmin
     environment:
       PMA_HOST: mysql
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # .envのDB_PASSWORDを使用
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
     ports:
       - "8080:80"
     depends_on:
@@ -60,7 +66,7 @@ services:
     networks:
       - app-network
 
-  # WordPress サービス (サービス名を変更)
+  # WordPress サービス
   blog_wordpress_service:
     image: wordpress:latest
     container_name: wordpress_blog_container
@@ -69,10 +75,11 @@ services:
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME} # .envから取得
       WORDPRESS_DB_USER: ${WORDPRESS_DB_USER} # .envから取得
       WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # .envから取得
+      WORDPRESS_DEBUG: 1 # デバッグモードを有効にする
     volumes:
       # WordPressのデータが永続化される場所（Docker内部の/var/www/html）
       # ここをホストの./wordpress_blogにマウントすることでNginxやPHPコンテナと共有する
-      - ./wordpress_blog:/var/www/html 
+      - ./wordpress_blog:/var/www/html
     depends_on:
       - mysql
     networks:
