@@ -1,9 +1,6 @@
 <?php
 // C:\doc\my_web_project\app\includes\sidebar.php
 
-// (元の sidebar.php のコンテンツをここに貼り付けてください)
-// 例: アコーディオン構造など
-
 ?>
 <aside class="my-custom-sidebar offcanvas offcanvas-start bg-light grid-sidebar" tabindex="-1" id="myCustomSidebar" aria-labelledby="myCustomSidebarLabel">
     <div class="offcanvas-header">
@@ -24,8 +21,8 @@
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-1</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-2</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-3</a></li>
-                            <!-- ユーザー管理リンクをユーザー登録に変更 -->
                             <li><a href="/index.php?page=users_admin" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-user-plus me-2"></i>ユーザー登録</a></li>
+                            <li><a href="/index.php?page=products_admin" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-box me-2"></i>商品登録</a></li>
                         </ul>
                     </div>
                 </div>
@@ -75,6 +72,8 @@
                             <?php else: ?>
                                 <li><a href="/login.php" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-sign-in-alt me-2"></i>ログイン</a></li>
                             <?php endif; ?>
+                            <!-- 管理者ユーザー追加リンク (開発用) -->
+                            <li><a href="/add_admin_user.php" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-user-shield me-2"></i>管理者ユーザー追加</a></li>
                         </ul>
                     </div>
                 </div>

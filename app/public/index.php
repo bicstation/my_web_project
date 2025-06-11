@@ -1,29 +1,23 @@
 <?php
 // C:\doc\my_web_project\app\public\index.php
 
-// セッションを開始 (必ずファイルの先頭に配置)
-session_start();
-
-// ★★★ デバッグ用ログ ここから ★★★
-echo "<!-- Debugging Session Info: -->\n";
-echo "<!-- Current Session ID: " . session_id() . " -->\n";
-echo "<!-- Session Array: " . print_r($_SESSION, true) . " -->\n";
-echo "<!-- User ID in Session: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'Not Set') . " -->\n";
-echo "<!-- Debugging Session Info: End -->\n";
-// ★★★ デバッグ用ログ ここまで ★★★
-
+// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
+require_once __DIR__ . '/init.php';
 
 // URLのクエリパラメータ 'page' を取得
 $currentPage = isset($_GET['page']) ? $_GET['page'] : 'home';
 
+// Debugging line: 現在のページとセッションのユーザーIDをPHPエラーログに出力
+error_log("Current page requested: " . $currentPage . ", User ID in session: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+
+
 // 管理画面へのアクセスチェックとリダイレクト
-// ユーザー管理ページ (users_admin) はログインが必要なページとして保護
-$protected_pages = ['users_admin']; // ここに保護したい他の管理ページを追加可能
+// ユーザー管理ページ (users_admin) と商品登録ページ (products_admin) はログインが必要なページとして保護
+$protected_pages = ['users_admin', 'products_admin']; // ここに保護したい管理ページを追加
 
 if (in_array($currentPage, $protected_pages)) {
     if (!isset($_SESSION['user_id'])) {
         // ログインしていない場合、ログインページにリダイレクト
-        // ここでリダイレクトされるため、以降のHTML出力は行われない
         header("Location: /login.php");
         exit(); // リダイレクト後、スクリプトの実行を停止
     }
@@ -34,6 +28,8 @@ if (in_array($currentPage, $protected_pages)) {
 $pageTitle = "Tiper Live";
 if ($currentPage === 'users_admin') {
     $pageTitle = "Tiper Live - ユーザー管理";
+} elseif ($currentPage === 'products_admin') {
+    $pageTitle = "Tiper Live - 商品登録"; // 新しく追加
 }
 // 必要に応じて、他のページのタイトルもここで設定可能
 
@@ -61,11 +57,13 @@ if ($currentPage === 'users_admin') {
                     // ユーザー管理ページの場合
                     include_once __DIR__ . '/users_admin_crud.php';
                     break;
+                case 'products_admin': // 新しく追加
+                    // 商品登録ページの場合
+                    include_once __DIR__ . '/products_admin.php';
+                    break;
                 case 'home':
                 default:
                     // 通常のホームページコンテンツ
-                    // main_content.php の中身を直接ここに記述、または別のファイルに分離してインクルード
-                    // ここでは元の main_content.php の home/default ケースの内容を直接記述します。
                     ?>
                     <nav aria-label="breadcrumb">
                         <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
@@ -82,8 +80,6 @@ if ($currentPage === 'users_admin') {
                                 <div class="card">
                                     <div class="card-body">
                                         <h5 class="card-title"><i class="fas fa-info-circle me-2"></i>コンテンツブロック 1</h5>
-                                        <p class="card-text">簡潔な説明文。</p>
-                                        <a href="#" class="btn btn-primary"><i class="fas fa-arrow-right me-1"></i>詳細を見る</a>
                                     </div>
                                 </div>
                             </div>
@@ -91,8 +87,6 @@ if ($currentPage === 'users_admin') {
                                 <div class="card">
                                     <div class="card-body">
                                         <h5 class="card-title"><i class="fas fa-lightbulb me-2"></i>コンテンツブロック 2</h5>
-                                        <p class="card-text">簡潔な説明文。</p>
-                                        <a href="#" class="btn btn-secondary"><i class="fas fa-arrow-right me-1"></i>詳細を見る</a>
                                     </div>
                                 </div>
                             </div>

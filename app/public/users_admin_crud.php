@@ -1,7 +1,16 @@
 <?php
 // C:\doc\my_web_project\app\public\users_admin_crud.php
 // tipers.live のメインコンテンツエリアに組み込むCRUD機能
-// このファイルは、すでに認証チェックが行われた後、index.phpからインクルードされることを想定しています。
+
+// セッションを開始 (必ずファイルの先頭付近に配置)
+session_start();
+
+// ログインチェック
+// ユーザーがログインしていない場合、ログインページにリダイレクト
+if (!isset($_SESSION['user_id'])) {
+    header("Location: /login.php"); // ログインページへのパス
+    exit();
+}
 
 // エラー報告を有効にする (開発用)
 ini_set('display_errors', 1);
@@ -29,17 +38,19 @@ $message = ""; // 成功・失敗メッセージを格納する変数
 // データ追加 (Create) の処理
 // -----------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
-    $name = $conn->real_escape_string($_POST['name']);
+    $username = $conn->real_escape_string($_POST['username']); // `name` を `username` に変更
     $email = $conn->real_escape_string($_POST['email']);
 
     // 入力検証
-    if (empty($name) || empty($email)) {
-        $message = "<div class='alert alert-warning'>名前とEメールは必須です。</div>";
+    if (empty($username) || empty($email)) { // `name` を `username` に変更
+        $message = "<div class='alert alert-warning'>ユーザー名とEメールは必須です。</div>";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $message = "<div class='alert alert-warning'>有効なEメールアドレスを入力してください。</div>";
     } else {
-        $stmt = $conn->prepare("INSERT INTO users (name, email) VALUES (?, ?)");
-        $stmt->bind_param("ss", $name, $email);
+        // `name` を `username` に変更
+        // パスワードがこのCRUDでは扱われないため、password_hashカラムへの挿入はadd_admin_user.phpのみ
+        $stmt = $conn->prepare("INSERT INTO users (username, email) VALUES (?, ?)");
+        $stmt->bind_param("ss", $username, $email); // `name` を `username` に変更
 
         if ($stmt->execute()) {
             $message = "<div class='alert alert-success'>新しいユーザーが追加されました。</div>";
@@ -59,16 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // -----------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_user') {
     $id = (int)$_POST['id'];
-    $name = $conn->real_escape_string($_POST['name']);
+    $username = $conn->real_escape_string($_POST['username']); // `name` を `username` に変更
     $email = $conn->real_escape_string($_POST['email']);
 
-    if (empty($id) || empty($name) || empty($email)) {
-        $message = "<div class='alert alert-warning'>ID、名前、Eメールは必須です。</div>";
+    if (empty($id) || empty($username) || empty($email)) { // `name` を `username` に変更
+        $message = "<div class='alert alert-warning'>ID、ユーザー名、Eメールは必須です。</div>";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $message = "<div class='alert alert-warning'>有効なEメールアドレスを入力してください。</div>";
     } else {
-        $stmt = $conn->prepare("UPDATE users SET name = ?, email = ? WHERE id = ?");
-        $stmt->bind_param("ssi", $name, $email, $id); // s: string, i: integer
+        // `name` を `username` に変更
+        $stmt = $conn->prepare("UPDATE users SET username = ?, email = ? WHERE id = ?");
+        $stmt->bind_param("ssi", $username, $email, $id); // `name` を `username` に変更
 
         if ($stmt->execute()) {
             $message = "<div class='alert alert-success'>ユーザー情報が更新されました。</div>";
@@ -117,22 +129,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // -----------------------------------------------------
     // データ表示 (Read) の処理
     // -----------------------------------------------------
-    $sql = "SELECT id, name, email, created_at FROM users ORDER BY id DESC"; // 新しいデータが上に来るように
+    // `name` を `username` に変更
+    $sql = "SELECT id, username, email, created_at FROM users ORDER BY id DESC"; // 新しいデータが上に来るように
     $result = $conn->query($sql);
 
     if ($result) {
         if ($result->num_rows > 0) {
             echo "<table class='table table-bordered table-striped'>";
-            echo "<thead><tr><th>ID</th><th>名前</th><th>Eメール</th><th>作成日時</th><th>操作</th></tr></thead>";
+            echo "<thead><tr><th>ID</th><th>ユーザー名</th><th>Eメール</th><th>作成日時</th><th>操作</th></tr></thead>";
             echo "<tbody>";
             while($row = $result->fetch_assoc()) {
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row["id"]). "</td>";
-                echo "<td>" . htmlspecialchars($row["name"]). "</td>"; // XSS対策
+                echo "<td>" . htmlspecialchars($row["username"]). "</td>"; // `name` を `username` に変更
                 echo "<td>" . htmlspecialchars($row["email"]). "</td>"; // XSS対策
                 echo "<td>" . htmlspecialchars($row["created_at"]). "</td>";
                 echo "<td>";
-                echo "<button class='btn btn-sm btn-info me-2 edit-btn' data-id='" . htmlspecialchars($row['id']) . "' data-name='" . htmlspecialchars($row['name']) . "' data-email='" . htmlspecialchars($row['email']) . "'>編集</button>";
+                // `data-name` を `data-username` に変更
+                echo "<button class='btn btn-sm btn-info me-2 edit-btn' data-id='" . htmlspecialchars($row['id']) . "' data-username='" . htmlspecialchars($row['username']) . "' data-email='" . htmlspecialchars($row['email']) . "'>編集</button>";
 
                 echo "<form method='POST' action='' class='d-inline-block' onsubmit='return confirm(\"本当に削除しますか？\");'>";
                 echo "    <input type='hidden' name='action' value='delete_user'>";
@@ -159,11 +173,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <form method='POST' action=''>
             <input type='hidden' name='action' value='add_user'>
             <div class='mb-3'>
-                <label for='add_name' class='form-label'>名前</label>
-                <input type='text' class='form-control' id='add_name' name='name' required>
+                <label for='add_username' class='form-label'>ユーザー名</label> <!-- `add_name` を `add_username` に変更 -->
+                <input type='text' class='form-control' id='add_username' name='username' required> <!-- `id='add_name'`, `name='name'` を変更 -->
             </div>
             <div class='mb-3'>
-                <label for='add_email' class='form-label'>Eメール</label>";
+                <label for='add_email' class='form-label'>Eメール</label>
                 <input type='email' class='form-control' id='add_email' name='email' required>
             </div>
             <button type='submit' class='btn btn-primary'>追加</button>
@@ -181,8 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <input type='hidden' name='action' value='update_user'>
             <input type='hidden' name='id' id='edit_id'>
             <div class='mb-3'>
-                <label for='edit_name' class='form-label'>名前</label>
-                <input type='text' class='form-control' id='edit_name' name='name' required>
+                <label for='edit_username' class='form-label'>ユーザー名</label> <!-- `edit_name` を `edit_username` に変更 -->
+                <input type='text' class='form-control' id='edit_username' name='username' required> <!-- `id='edit_name'`, `name='name'` を変更 -->
             </div>
             <div class='mb-3'>
                 <label for='edit_email' class='form-label'>Eメール</label>
@@ -205,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const editButtons = document.querySelectorAll('.edit-btn');
     const editFormSection = document.getElementById('edit-form-section');
     const editIdInput = document.getElementById('edit_id');
-    const editNameInput = document.getElementById('edit_name');
+    const editUsernameInput = document.getElementById('edit_username'); // `editNameInput` を `editUsernameInput` に変更
     const editEmailInput = document.getElementById('edit_email');
     const cancelEditButton = document.getElementById('cancel-edit');
 
@@ -221,7 +235,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 editFormSection.style.display = 'none';
             }
             editIdInput.value = '';
-            editNameInput.value = '';
+            editUsernameInput.value = ''; // `editNameInput` を `editUsernameInput` に変更
             editEmailInput.value = '';
         });
     } else {
@@ -233,11 +247,11 @@ document.addEventListener('DOMContentLoaded', function() {
             button.addEventListener('click', function() {
                 console.log('編集ボタンがクリックされました！');
                 const id = this.dataset.id;
-                const name = this.dataset.name;
+                const username = this.dataset.username; // `name` を `username` に変更
                 const email = this.dataset.email;
 
                 editIdInput.value = id;
-                editNameInput.value = name;
+                editUsernameInput.value = username; // `editNameInput` を `editUsernameInput` に変更
                 editEmailInput.value = email;
                 if (editFormSection) {
                     editFormSection.style.display = 'block';

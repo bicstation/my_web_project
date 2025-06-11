@@ -2,14 +2,15 @@
 // C:\doc\my_web_project\app\public\login.php
 // ログインページ
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
+require_once __DIR__ . '/init.php';
 
-session_start(); // セッションを開始
+// Debugging: ログインページのアクセス時にセッション情報をログに出力
+error_log("Login page accessed. Session user_id: " . ($_SESSION['user_id'] ?? 'NOT SET'));
 
 // ログイン済みの場合、ダッシュボードまたはホームにリダイレクト
 if (isset($_SESSION['user_id'])) {
+    error_log("Already logged in, redirecting to home. User ID: " . $_SESSION['user_id']);
     header("Location: /"); // ログイン後はトップページにリダイレクト（後で管理ダッシュボードに変更）
     exit();
 }
@@ -33,29 +34,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     if ($conn->connect_error) {
         $login_message = "<div class='alert alert-danger'>データベース接続エラー: " . $conn->connect_error . "</div>";
+        error_log("Login DB connection error: " . $conn->connect_error);
     } else {
-        $stmt = $conn->prepare("SELECT id, name, email, password FROM users WHERE email = ?");
+        $stmt = $conn->prepare("SELECT id, username, email, password_hash FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
 
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
-            // パスワードのハッシュを検証
-            if (password_verify($password, $user['password'])) {
+            if (password_verify($password, $user['password_hash'])) {
                 // ログイン成功
                 $_SESSION['user_id'] = $user['id'];
-                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['user_name'] = $user['username'];
                 $_SESSION['user_email'] = $user['email'];
                 $login_message = "<div class='alert alert-success'>ログイン成功！</div>";
-                // ログイン後、トップページまたは管理ページにリダイレクト
-                header("Location: /"); // ログイン後はトップページにリダイレクト（後で管理ダッシュボードに変更）
+                
+                // Debugging: ログイン成功時にセッション情報がセットされたことをログに出力
+                error_log("Login successful! User ID set in session: " . $_SESSION['user_id'] . ", Username: " . $_SESSION['user_name']);
+
+                // ★追加: リダイレクト直前のセッション内容をログに出力
+                error_log("Login.php - SESSION before redirect: " . print_r($_SESSION, true));
+
+                // セッションにデータが書き込まれたので、すぐにリダイレクト
+                header("Location: /");
                 exit();
             } else {
                 $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
+                error_log("Login failed: Password verification failed for email: " . $email);
             }
         } else {
             $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
+            error_log("Login failed: User not found or multiple users for email: " . $email);
         }
         $stmt->close();
         $conn->close();
