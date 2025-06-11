@@ -24,8 +24,8 @@
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-1</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-2</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-3</a></li>
-                            <!-- ユーザー管理リンク -->
-                            <li><a href="/index.php?page=users_admin" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-user-plus me-2"></i>ユーザー管理</a></li>
+                            <!-- ユーザー管理リンクをユーザー登録に変更 -->
+                            <li><a href="/index.php?page=users_admin" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-user-plus me-2"></i>ユーザー登録</a></li>
                         </ul>
                     </div>
                 </div>
@@ -60,7 +60,7 @@
                     </div>
                 </div>
             </div>
-            <!-- ログイン/ログアウトリンクのセクションを追加 -->
+            <!-- ログイン/ログアウトリンクのセクション -->
             <div class="accordion-item">
                 <h2 class="accordion-header" id="headingAuth">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAuth" aria-expanded="false" aria-controls="collapseAuth">
