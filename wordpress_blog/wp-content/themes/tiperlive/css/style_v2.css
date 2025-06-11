@@ -1,0 +1,247 @@
+/* my_web_project/app/public/css/style_v2.css */
+
+/* 全体の基本設定 */
+body {
+    min-height: 100vh; /* 最低でもビューポートの高さ */
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    margin: 0; /* bodyのデフォルトマージンをリセット */
+    padding: 0; /* bodyのデフォルトパディングをリセット */
+}
+
+/* ヘッダーのカスタマイズ */
+header {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+    z-index: 1020; /* Bootstrapのnavbar-fixed-topと同じz-index */
+}
+
+header .h3 {
+    font-weight: 600;
+}
+
+header .navbar {
+    box-shadow: none;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.navbar .nav-link {
+    font-weight: 500;
+}
+
+.navbar .dropdown-menu {
+    border-radius: 0.5rem;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, .1);
+}
+
+.navbar .dropdown-item:hover {
+    background-color: #e9ecef;
+}
+
+/* メインコンテンツエリアの基本スタイル */
+#main-content-area { /* HTMLで追加したID */
+    padding: 20px; /* メインコンテンツの基本的なパディング */
+}
+
+/* サイドバーのカスタマイズ */
+.my-custom-sidebar {
+    width: 250px; /* サイドバーの標準幅 */
+    box-shadow: 2px 0 5px rgba(0, 0, 0, .1);
+    z-index: 1010; /* PC版ではGridアイテムのz-indexとして機能 */
+}
+
+/* サイドバーメニュー (アコーディオン) */
+.accordion-button {
+    font-weight: 600;
+}
+
+.accordion-body ul li a {
+    padding-left: 1rem;
+    font-size: 0.95em;
+    border-left: 3px solid transparent;
+    transition: border-left-color .2s ease-in-out;
+}
+
+.accordion-body ul li a:hover {
+    border-left-color: #007bff;
+    color: #007bff !important;
+    background-color: #e9ecef;
+}
+
+/* パンくずリストのカスタマイズ */
+.breadcrumb {
+    font-size: 0.9em;
+}
+
+.breadcrumb-item a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.breadcrumb-item.active {
+    color: #6c757d;
+}
+
+/* フッターのカスタマイズ */
+footer {
+    border-top: 1px solid #333;
+    padding: 20px 0;
+    background-color: #343a40;
+    color: #f8f9fa;
+    /* mt-auto はFlexboxユーティリティのため、Gridレイアウトでは grid-template-rows で制御される */
+}
+
+footer h5 {
+    color: #007bff;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+footer ul li a {
+    color: #f8f9fa;
+    text-decoration: none;
+}
+
+footer ul li a:hover {
+    color: #ced4da !important;
+}
+
+footer .fab {
+    transition: color .2s ease-in-out;
+}
+
+footer .fab:hover {
+    color: #007bff;
+}
+
+/* アイコンとテキストの間隔 */
+.me-1 {
+    margin-right: 0.25rem !important;
+}
+
+.me-2 {
+    margin-right: 0.5rem !important;
+}
+
+
+/* ----------------------------------------------------- */
+/* レスポンシブ調整 - 中画面以上 (768px) */
+/* ----------------------------------------------------- */
+
+@media (min-width: 768px) {
+    /* BodyをGridコンテナにする */
+    body {
+        display: grid;
+        /* グリッドテンプレートエリアの定義 */
+        grid-template-areas:
+            "header header"
+            "sidebar main"
+            "footer footer";
+        /* 各行と列のサイズ定義 */
+        grid-template-rows: auto 1fr auto; /* header, footer はコンテンツの高さ、main は残りの高さ */
+        grid-template-columns: 250px 1fr; /* sidebar は250px、main は残りの幅 */
+        /* サイドバーが閉じる際のアニメーションをbodyに設定 */
+        transition: grid-template-columns 0.3s ease-in-out;
+        /* Gridコンテナ全体をスクロールできるように、bodyの高さがコンテンツに合わせて伸びるようにする */
+        height: auto; /* コンテンツに合わせて自動で高さが伸びるように */
+        overflow-y: auto; /* bodyにスクロールバーを持たせることで、stickyが正しく機能 */
+    }
+
+    /* 各要素をグリッドエリアに配置 */
+    .grid-header {
+        grid-area: header;
+        position: sticky; /* ヘッダーを常に上部に固定 */
+        top: 0;
+        z-index: 1020; /* 他の要素より手前に表示 */
+    }
+
+    .grid-sidebar {
+        grid-area: sidebar;
+        position: sticky; /* サイドバーをスクロールで固定 */
+        top: 96px; /* ヘッダーの高さに合わせる */
+        height: calc(100vh - 96px); /* ビューポート高さからヘッダー高さを引いた値に固定 */
+        border-right: 1px solid rgba(0, 0, 0, .1); /* 必要であれば区切り線 */
+        overflow-y: auto; /* サイドバーの内容が溢れたらスクロール */
+        background-color: var(--bs-body-bg, #f8f9fa); /* 背景色をbodyに合わせるか、bg-lightで固定 */
+    }
+
+    .grid-main {
+        grid-area: main;
+        overflow-y: auto; /* メインコンテンツエリアでスクロールを管理 */
+        min-height: calc(100vh - 96px - 70px); /* 例: 100vh - header_height - footer_height */
+                                                /* ここはフッターの実際の高さに合わせて調整してください */
+    }
+
+    .grid-footer {
+        grid-area: footer;
+    }
+
+    /* body に sidebar-collapsed クラスが付与されたときのスタイル */
+    body.sidebar-collapsed {
+        grid-template-columns: 0px 1fr; /* サイドバーの幅を0にし、メインコンテンツを全幅に */
+    }
+
+    /* PCビューでのOffcanvas（サイドバー）の表示調整 */
+    .my-custom-sidebar.offcanvas {
+        visibility: visible !important;
+        transform: translateX(0) !important;
+        border-right: 1px solid rgba(0,0,0,.175); /* Bootstrap offcanvasのborder */
+        position: sticky !important; /* Offcanvasのposition:fixedを上書きしてstickyを強制 */
+        top: 96px !important; /* Offcanvasのtopも強制的に上書き */
+        height: calc(100vh - 96px) !important; /* Offcanvasのheightも強制的に上書き */
+        z-index: 1050 !important; /* PC版Offcanvasもz-indexを高く設定 */
+    }
+
+    /* ヘッダーの小画面用サイドバーボタンを非表示に */
+    header button.d-md-none {
+        display: none !important;
+    }
+
+    /* サイドバー内の閉じるボタンを非表示に */
+    .my-custom-sidebar .offcanvas-header .btn-close {
+        display: none !important;
+    }
+
+    /* ヘッダーの検索窓を大画面で表示 */
+    header form.d-none.d-md-inline-flex {
+        display: inline-flex !important;
+    }
+}
+
+/* スマホサイズ (767.98px 以下) での調整 */
+@media (max-width: 767.98px) {
+    body {
+        display: flex; /* スマホではFlexboxに戻すか、必要なら別のGrid定義を行う */
+        flex-direction: column; /* 縦並び */
+    }
+
+    /* PC用トグルボタンをスマホで非表示に */
+    #myCustomSidebarToggleBtn {
+        display: none !important;
+    }
+
+    /* スマホ版 Offcanvas 自体の z-index を強制的に高く設定 */
+    .my-custom-sidebar.offcanvas {
+        z-index: 1050 !important;
+    }
+
+    /* スマホ版 Offcanvas 内のリンクとアコーディオンボタンのクリック問題を検証 */
+    body .offcanvas.show .accordion-body ul li a,
+    body .offcanvas.show .accordion-button {
+        pointer-events: auto !important;
+    }
+
+    /* ★★★ 追加/修正: Offcanvas の body 部分がスクロールを持つようにする (前回の提案) ★★★ */
+    /* これらはOffcanvasが開いている時のみ影響するため、通常表示のフッターには影響しないはず */
+    .offcanvas-body {
+        height: calc(100vh - var(--header-height, 0px)); /* ビューポートの高さからヘッダー高さを引いた値に */
+        overflow-y: auto; /* コンテンツが溢れたらスクロール */
+        -webkit-overflow-scrolling: touch; /* iOSでの滑らかなスクロール */
+        padding-bottom: 20px; /* フッターが表示されるように下部に余白を追加 */
+    }
+
+    /* ヘッダーの高さをカスタムプロパティで定義（もし必要なら） */
+    :root {
+        --header-height: 96px; /* ヘッダーの実際の高さに合わせて調整 */
+    }
+}
