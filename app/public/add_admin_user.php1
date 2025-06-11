@@ -1,0 +1,56 @@
+<?php
+// C:\doc\my_web_project\app\public\add_admin_user.php
+// 管理者ユーザーを一時的に追加するためのスクリプト
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// .envファイルからデータベース接続情報を取得
+$db_host = getenv('DB_HOST');
+$db_name = getenv('DB_NAME');
+$db_user = getenv('DB_USER');
+$db_password = getenv('DB_PASSWORD');
+
+$conn = new mysqli($db_host, $db_user, $db_password, $db_name);
+
+if ($conn->connect_error) {
+    die("データベース接続エラー: " . $conn->connect_error);
+}
+
+// 追加する管理者ユーザーの情報
+$admin_name = "admin";
+$admin_email = "admin@tipers.live";
+$admin_plain_password = "1492nabe"; // ★★★ ここに設定したいパスワードを入力してください ★★★
+
+// パスワードをハッシュ化
+$admin_hashed_password = password_hash($admin_plain_password, PASSWORD_DEFAULT);
+
+// ユーザーが既に存在するかチェック (emailで)
+$stmt_check = $conn->prepare("SELECT id FROM users WHERE email = ?");
+$stmt_check->bind_param("s", $admin_email);
+$stmt_check->execute();
+$stmt_check->store_result();
+
+if ($stmt_check->num_rows > 0) {
+    echo "<h3>管理者ユーザー ('$admin_email') は既に存在します。</h3>";
+} else {
+    // ユーザーを挿入
+    $stmt_insert = $conn->prepare("INSERT INTO users (name, email, password) VALUES (?, ?, ?)");
+    $stmt_insert->bind_param("sss", $admin_name, $admin_email, $admin_hashed_password);
+
+    if ($stmt_insert->execute()) {
+        echo "<h3>管理者ユーザー ('$admin_name' / '$admin_email') が正常に追加されました。</h3>";
+        echo "<p>パスワードはハッシュ化されています。</p>";
+        echo "<p>追加されたユーザーのID: " . $stmt_insert->insert_id . "</p>";
+    } else {
+        echo "<h3>管理者ユーザーの追加に失敗しました: " . $stmt_insert->error . "</h3>";
+    }
+    $stmt_insert->close();
+}
+
+$stmt_check->close();
+$conn->close();
+
+echo "<p><a href='/'>トップページに戻る</a></p>";
+?>

@@ -1,103 +1,114 @@
 <?php
-// my_web_project/app/public/login.php
+// C:\doc\my_web_project\app\public\login.php
+// ログインページ
 
-require __DIR__ . '/includes/config.php';
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-$username_err = $password_err = "";
-$username = $password = "";
+session_start(); // セッションを開始
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // ユーザー名が空でないかチェック
-    if (empty(trim($_POST["username"]))) {
-        $username_err = "ユーザー名を入力してください。";
+// ログイン済みの場合、ダッシュボードまたはホームにリダイレクト
+if (isset($_SESSION['user_id'])) {
+    header("Location: /"); // ログイン後はトップページにリダイレクト（後で管理ダッシュボードに変更）
+    exit();
+}
+
+$login_message = "";
+
+// -----------------------------------------------------
+// ログイン処理
+// -----------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
+    $email = $_POST['email'];
+    $password = $_POST['password'];
+
+    // 環境変数からデータベース接続情報を取得
+    $db_host = getenv('DB_HOST');
+    $db_name = getenv('DB_NAME');
+    $db_user = getenv('DB_USER');
+    $db_password = getenv('DB_PASSWORD');
+
+    $conn = new mysqli($db_host, $db_user, $db_password, $db_name);
+
+    if ($conn->connect_error) {
+        $login_message = "<div class='alert alert-danger'>データベース接続エラー: " . $conn->connect_error . "</div>";
     } else {
-        $username = trim($_POST["username"]);
-    }
+        $stmt = $conn->prepare("SELECT id, name, email, password FROM users WHERE email = ?");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    // パスワードが空でないかチェック
-    if (empty(trim($_POST["password"]))) {
-        $password_err = "パスワードを入力してください。";
-    } else {
-        $password = trim($_POST["password"]);
-    }
-
-    // 入力値が検証済みであれば認証を試みる
-    if (empty($username_err) && empty($password_err)) {
-        $sql = "SELECT id, username, password_hash FROM users WHERE username = ?";
-
-        if ($stmt = $conn->prepare($sql)) {
-            $stmt->bind_param("s", $param_username);
-            $param_username = $username;
-
-            if ($stmt->execute()) {
-                $stmt->store_result();
-
-                if ($stmt->num_rows == 1) {
-                    $stmt->bind_result($id, $username, $hashed_password);
-                    if ($stmt->fetch()) {
-                        if (password_verify($password, $hashed_password)) {
-                            // パスワードが正しい場合、セッションを開始
-                            // session_start(); // config.php で開始済みの場合もあるが念のため
-
-                            $_SESSION["loggedin"] = true;
-                            $_SESSION["user_id"] = $id;
-                            $_SESSION["username"] = $username;
-
-                            // ダッシュボードページにリダイレクト
-                            header("Location: dashboard.php");
-                            exit();
-                        } else {
-                            $password_err = "入力されたパスワードが正しくありません。";
-                        }
-                    }
-                } else {
-                    $username_err = "指定されたユーザー名のレコードは見つかりませんでした。";
-                }
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+            // パスワードのハッシュを検証
+            if (password_verify($password, $user['password'])) {
+                // ログイン成功
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['user_email'] = $user['email'];
+                $login_message = "<div class='alert alert-success'>ログイン成功！</div>";
+                // ログイン後、トップページまたは管理ページにリダイレクト
+                header("Location: /"); // ログイン後はトップページにリダイレクト（後で管理ダッシュボードに変更）
+                exit();
             } else {
-                echo "エラーが発生しました。後でもう一度お試しください。";
+                $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
             }
-            $stmt->close();
+        } else {
+            $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
         }
+        $stmt->close();
+        $conn->close();
     }
-    $conn->close();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ログイン</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { font: 14px sans-serif; text-align: center; }
-        .wrapper { width: 360px; padding: 20px; margin: 50px auto; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; }
-        .form-group input[type="text"], .form-group input[type="password"] { width: calc(100% - 22px); padding: 10px; border: 1px solid #ccc; border-radius: 3px; }
-        .form-group .help-block { color: red; font-size: 0.9em; }
-        .btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
-        .btn:hover { background-color: #0056b3; }
+        body {
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-container h2 {
+            margin-bottom: 30px;
+            color: #007bff;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
-    <div class="wrapper">
+    <div class="login-container">
         <h2>ログイン</h2>
-        <p>ログイン情報を入力してください。</p>
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
-            <div class="form-group">
-                <label>ユーザー名</label>
-                <input type="text" name="username" value="<?php echo $username; ?>">
-                <span class="help-block"><?php echo $username_err; ?></span>
+        <?php if (!empty($login_message)) { echo $login_message; } ?>
+        <form method="POST" action="">
+            <input type="hidden" name="action" value="login">
+            <div class="mb-3">
+                <label for="email" class="form-label">Eメール</label>
+                <input type="email" class="form-control" id="email" name="email" required autocomplete="username">
             </div>
-            <div class="form-group">
-                <label>パスワード</label>
-                <input type="password" name="password">
-                <span class="help-block"><?php echo $password_err; ?></span>
+            <div class="mb-3">
+                <label for="password" class="form-label">パスワード</label>
+                <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
             </div>
-            <div class="form-group">
-                <input type="submit" class="btn" value="ログイン">
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary">ログイン</button>
             </div>
-            <p>アカウントをお持ちではありませんか？ <a href="create_users_table.php">ユーザーを作成</a>してください。</p>
         </form>
     </div>
 </body>

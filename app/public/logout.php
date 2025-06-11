@@ -1,12 +1,10 @@
 <?php
-// my_web_project/app/public/logout.php
+// C:\doc\my_web_project\app\public\logout.php
+// ログアウト処理
 
-// セッションを開始
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
+session_start(); // セッションを開始
 
-// すべてのセッション変数をクリア
+// 全てのセッション変数をクリア
 $_SESSION = array();
 
 // セッションクッキーを削除
@@ -21,7 +19,7 @@ if (ini_get("session.use_cookies")) {
 // セッションを破棄
 session_destroy();
 
-// ログインページにリダイレクト
-header("Location: login.php");
+// ログインページまたはトップページにリダイレクト
+header("Location: /login.php");
 exit();
 ?>

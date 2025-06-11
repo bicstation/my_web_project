@@ -1,3 +1,10 @@
+<?php
+// C:\doc\my_web_project\app\includes\sidebar.php
+
+// (元の sidebar.php のコンテンツをここに貼り付けてください)
+// 例: アコーディオン構造など
+
+?>
 <aside class="my-custom-sidebar offcanvas offcanvas-start bg-light grid-sidebar" tabindex="-1" id="myCustomSidebar" aria-labelledby="myCustomSidebarLabel">
     <div class="offcanvas-header">
         <h5 class="offcanvas-title" id="myCustomSidebarLabel">サイドメニュー</h5>
@@ -17,6 +24,8 @@
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-1</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-2</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-file-alt me-2"></i>サブメニュー 1-3</a></li>
+                            <!-- ユーザー管理リンク -->
+                            <li><a href="/index.php?page=users_admin" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-user-plus me-2"></i>ユーザー管理</a></li>
                         </ul>
                     </div>
                 </div>
@@ -47,6 +56,25 @@
                         <ul class="list-unstyled ps-3">
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-chart-pie me-2"></i>レポート</a></li>
                             <li><a href="#" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-globe me-2"></i>地域別データ</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <!-- ログイン/ログアウトリンクのセクションを追加 -->
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="headingAuth">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAuth" aria-expanded="false" aria-controls="collapseAuth">
+                        <i class="fas fa-sign-in-alt me-2"></i>認証
+                    </button>
+                </h2>
+                <div id="collapseAuth" class="accordion-collapse collapse" aria-labelledby="headingAuth" data-bs-parent="#sidebarAccordion">
+                    <div class="accordion-body">
+                        <ul class="list-unstyled ps-3">
+                            <?php if (isset($_SESSION['user_id'])): ?>
+                                <li><a href="/logout.php" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-sign-out-alt me-2"></i>ログアウト (<?php echo htmlspecialchars($_SESSION['user_name']); ?>)</a></li>
+                            <?php else: ?>
+                                <li><a href="/login.php" class="text-decoration-none text-dark py-1 d-block"><i class="fas fa-sign-in-alt me-2"></i>ログイン</a></li>
+                            <?php endif; ?>
                         </ul>
                     </div>
                 </div>
