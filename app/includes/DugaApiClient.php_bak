@@ -1,0 +1,339 @@
+<?php
+// C:\project\my_web_project\app\cli\process_duga_api.php
+
+// 共通のインクルードファイルを読み込む
+// 重要: 各クラスファイルは、自身のクラス定義のみを含むべきであり、
+// 他のアプリケーション固有のクラスを require_once すべきではありません。
+// 依存関係は、メインの実行スクリプト（このファイル）で管理するのが最善です。
+// 例えば、Logger.php、DbBatchInsert.php、DugaApiClient.php の各ファイル内部では、
+// 他のクラスファイルを require_once しないようにしてください。
+
+// 修正: 正しい相対パスを使用しました。
+require_once __DIR__ . '/../includes/Logger.php';          // ログ出力用の Logger クラスを提供
+require_once __DIR__ . '/../includes/db_config.php';        // データベース接続関数 connectDB() を提供
+// DbBatchInsert は、現在のUPSERTロジックでは直接使用しないため、読み込みをコメントアウトします。
+// 必要に応じて、DbBatchInsert クラス内で UPSERT 機能の実装を検討するか、
+// 他の場所でバルクインサートが必要な場合にのみ使用してください。
+// require_once __DIR__ . '/../includes/DbBatchInsert.php';
+require_once __DIR__ . '/../includes/DugaApiClient.php';    // Duga APIへのリクエストを処理する DugaApiClient クラスを提供
+
+// このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
+if (php_sapi_name() !== 'cli') {
+    die("このスクリプトはWebブラウザからではなく、CLI (コマンドライン) から実行してください。\n");
+}
+
+// -----------------------------------------------------
+// 定義: 設定値とデフォルト値
+// -----------------------------------------------------
+const DEFAULT_AGENT_ID = '48043';
+const DEFAULT_ADULT_PARAM = '1';
+const DEFAULT_SORT_PARAM = 'favorite';
+const DEFAULT_BANNER_ID = '01';
+const API_RECORDS_PER_REQUEST = 100; // Duga APIが一度に返すレコード数
+const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
+const API_SOURCE_NAME = 'duga';     // このAPIのソース名
+
+// -----------------------------------------------------
+// 初期設定とリソースの準備
+// -----------------------------------------------------
+$logger = null; // ロガーを初期化
+$pdo = null;    // PDOオブジェクトを初期化
+
+try {
+    // Loggerクラスのインスタンス化 (ログファイル名を指定)
+    $logger = new Logger('duga_api_processing.log');
+    $logger->log("Duga APIからのデータ取得とデータベース保存処理を開始します。");
+
+    // データベース接続の確立
+    $pdo = connectDB(); // db_config.phpで定義
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); // エラーモードを例外に設定
+    $logger->log("データベース接続に成功しました。");
+
+    // Duga APIクライアントのインスタンス化
+    // DugaApiClient が Logger を必要とする場合、ここで $logger インスタンスを渡すことが推奨されます。
+    // 例: $dugaApiClient = new DugaApiClient($logger);
+    // ただし、現在の DugaApiClient が内部で Logger をインスタンス化している場合は、
+    // DugaApiClient.php 内部の require_once が正しく、かつ循環参照がないことを確認してください。
+    $dugaApiClient = new DugaApiClient();
+
+    // バルクインサートヘルパークラス DbBatchInsert は、このスクリプトの現在のUPSERTロジックでは直接使用しません。
+    // 必要であれば DbBatchInsert クラスのインスタンス化を解除するか、コメントアウトしてください。
+    // $dbBatchInserter = new DbBatchInsert($pdo);
+
+} catch (Exception $e) {
+    // 初期設定段階でのエラーをログに記録し、スクリプトを終了
+    error_log("CLI初期設定エラー: " . $e->getMessage()); // PHPのエラーログに出力
+    if ($logger) { // ロガーが初期化されている場合のみ利用
+        $logger->error("CLI初期設定中に致命的なエラーが発生しました: " . $e->getMessage()); // Dugaログに出力
+    }
+    die("初期設定中にエラーが発生しました。ログを確認してください。\n");
+}
+
+// -----------------------------------------------------
+// コマンドライン引数のパース
+// -----------------------------------------------------
+$cli_options = getopt("", ["start_date::", "end_date::", "keyword::", "genre_id::", "agentid::", "bannerid::", "adult::", "sort::"]);
+
+// コマンドライン引数がない場合はデフォルト値を適用
+$start_date = $cli_options['start_date'] ?? null;
+$end_date   = $cli_options['end_date'] ?? null;
+$keyword    = $cli_options['keyword'] ?? null;
+$genre_id   = $cli_options['genre_id'] ?? null;
+$agentid    = $cli_options['agentid'] ?? DEFAULT_AGENT_ID;
+$bannerid   = $cli_options['bannerid'] ?? DEFAULT_BANNER_ID;
+$adult      = $cli_options['adult'] ?? DEFAULT_ADULT_PARAM;
+$sort       = $cli_options['sort'] ?? DEFAULT_SORT_PARAM;
+
+$logger->log("CLI Arguments processed: " . json_encode([
+    'start_date' => $start_date,
+    'end_date' => $end_date,
+    'keyword' => $keyword,
+    'genre_id' => $genre_id,
+    'agentid' => $agentid,
+    'bannerid' => $bannerid,
+    'adult' => $adult,
+    'sort' => $sort
+]));
+
+
+// -----------------------------------------------------
+// データ取得と保存のメインロジック
+// -----------------------------------------------------
+$current_page = 1; // 現在のページ番号 (ログと進捗表示用)
+$total_processed_records = 0; // 全体の処理済みレコード数
+$raw_data_buffer = []; // raw_api_data テーブルに挿入するためのバッファ
+$products_buffer_temp = []; // products テーブルに挿入するためのデータと api_product_id の一時マッピング
+$api_product_ids_in_batch = []; // 現在のバッチで処理するapi_product_idのリスト
+
+// raw_api_dataテーブルへのUPSERT用プリペアドステートメントを準備
+// api_product_id と source_name がユニークキーであることを前提とします
+$stmt_raw_upsert = $pdo->prepare(
+    "INSERT INTO raw_api_data (source_name, api_product_id, row_json_data, fetched_at, updated_at) " .
+    "VALUES (:source_name, :api_product_id, :row_json_data, :fetched_at, :updated_at) " .
+    "ON DUPLICATE KEY UPDATE " .
+    "row_json_data = VALUES(row_json_data), " .
+    "updated_at = VALUES(updated_at)"
+);
+
+// productsテーブルへのUPSERT用プリペアドステートメントを準備
+// product_id がユニークキーであることを前提とします
+$stmt_products_upsert = $pdo->prepare(
+    "INSERT INTO products (product_id, title, release_date, maker_name, genre, url, image_url, source_api, row_api_data_id, created_at, updated_at) " .
+    "VALUES (:product_id, :title, :release_date, :maker_name, :genre, :url, :image_url, :source_api, :row_api_data_id, :created_at, :updated_at) " .
+    "ON DUPLICATE KEY UPDATE " .
+    "title = VALUES(title), " .
+    "release_date = VALUES(release_date), " .
+    "maker_name = VALUES(maker_name), " .
+    "genre = VALUES(genre), " .
+    "url = VALUES(url), " .
+    "image_url = VALUES(image_url), " .
+    "row_api_data_id = VALUES(row_api_data_id), " .
+    "updated_at = VALUES(updated_at)"
+);
+
+// raw_api_dataのIDを取得するためのステートメント
+$stmt_get_raw_id = $pdo->prepare("SELECT id FROM raw_api_data WHERE source_name = ? AND api_product_id = ?");
+
+try {
+    while (true) {
+        $current_offset = ($current_page - 1) * API_RECORDS_PER_REQUEST + 1;
+        $logger->log("Duga APIからアイテムを取得中... (ページ: {$current_page}, offset: {$current_offset}, 件数: " . API_RECORDS_PER_REQUEST . ")");
+
+        $additional_api_params = [];
+        if ($start_date) $additional_api_params['release_date_from'] = $start_date;
+        if ($end_date)   $additional_api_params['release_date_to'] = $end_date;
+        if ($keyword)    $additional_api_params['keyword'] = $keyword;
+        if ($genre_id)   $additional_api_params['genre_id'] = $genre_id;
+        if ($agentid)    $additional_api_params['agentid'] = $agentid;
+        if ($bannerid)   $additional_api_params['bannerid'] = $bannerid;
+        if ($adult)      $additional_api_params['adult'] = $adult;
+        if ($sort)       $additional_api_params['sort'] = $sort;
+
+        // Duga APIからアイテムデータを取得
+        $api_data_batch = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
+
+        // APIからのデータが空の場合、全てのデータ取得が完了したと判断しループを終了
+        if (empty($api_data_batch)) {
+            $logger->log("Duga APIから追加のアイテムデータが取得できませんでした。全てのAPIデータの取得が完了しました。");
+            break; // ループを抜ける
+        }
+
+        // 取得したAPIデータをraw_api_dataとproductsの両方のバッファに準備
+        foreach ($api_data_batch as $api_record) {
+            $content_id = $api_record['productid'] ?? null; 
+            
+            if (empty($content_id)) {
+                $logger->error("警告: productid (または content_id/id) が空のためレコードをスキップします: " . json_encode($api_record));
+                continue; // productid がないレコードはスキップ
+            }
+
+            // raw_api_data テーブル用のデータ準備
+            $raw_data_entry = [
+                'source_name'    => API_SOURCE_NAME,
+                'api_product_id' => $content_id,
+                'row_json_data'  => json_encode($api_record),
+                'fetched_at'     => date('Y-m-d H:i:s'),
+                'updated_at'     => date('Y-m-d H:i:s')
+            ];
+            $raw_data_buffer[] = $raw_data_entry;
+            $api_product_ids_in_batch[] = $content_id; // 製品IDを記録
+
+            // products テーブル用の初期データ準備
+            // ジャンルデータの堅牢な抽出
+            $genre = null;
+            if (isset($api_record['category']) && is_array($api_record['category']) && !empty($api_record['category'][0]['data']['name'])) {
+                $genre = $api_record['category'][0]['data']['name'];
+            }
+
+            $product_entry_temp = [
+                'product_id'    => $content_id,
+                'title'         => $api_record['title'] ?? null,
+                'release_date'  => $api_record['opendate'] ?? $api_record['releasedate'] ?? null,
+                'maker_name'    => $api_record['makername'] ?? null,
+                'genre'         => $genre,
+                'url'           => $api_record['affiliateurl'] ?? $api_record['url'] ?? null,
+                'image_url'     => $api_record['jacketimage'][0]['large'] ?? $api_record['posterimage'][0]['large'] ?? null,
+                'source_api'    => API_SOURCE_NAME,
+                'created_at'    => date('Y-m-d H:i:s'), // 新規作成時のみ、ON DUPLICATE KEY UPDATEでは更新しない
+                'updated_at'    => date('Y-m-d H:i:s')
+            ];
+            $products_buffer_temp[$content_id] = $product_entry_temp;
+        }
+
+        // バッファが指定したチャンクサイズに達したら、データベースへのUPSERTを実行
+        if (count($raw_data_buffer) >= DB_BUFFER_SIZE) {
+            $logger->log("バッファが" . DB_BUFFER_SIZE . "件に達しました。データベースへのUPSERTを開始します。");
+            
+            // トランザクションを開始
+            $pdo->beginTransaction();
+            try {
+                $inserted_or_updated_count = 0;
+                $products_inserted_or_updated_count = 0;
+
+                foreach ($raw_data_buffer as $raw_data_item) {
+                    // raw_api_data テーブルへのUPSERT
+                    $stmt_raw_upsert->execute($raw_data_item);
+                    $inserted_or_updated_count++;
+
+                    // 挿入または更新されたraw_api_dataのIDを取得
+                    $stmt_get_raw_id->execute([API_SOURCE_NAME, $raw_data_item['api_product_id']]);
+                    $raw_api_data_id = $stmt_get_raw_id->fetchColumn();
+                    
+                    // products_buffer_temp に row_api_data_id を追加
+                    if (isset($products_buffer_temp[$raw_data_item['api_product_id']])) {
+                        $product_data = $products_buffer_temp[$raw_data_item['api_product_id']];
+                        $product_data['row_api_data_id'] = $raw_api_data_id;
+                        
+                        // products テーブルへのUPSERT
+                        // created_at は新規挿入時のみ設定し、更新時は変更しないため、ON DUPLICATE KEY UPDATEから除外する
+                        $stmt_products_upsert->execute([
+                            'product_id'    => $product_data['product_id'],
+                            'title'         => $product_data['title'],
+                            'release_date'  => $product_data['release_date'],
+                            'maker_name'    => $product_data['maker_name'],
+                            'genre'         => $product_data['genre'],
+                            'url'           => $product_data['url'],
+                            'image_url'     => $product_data['image_url'],
+                            'source_api'    => $product_data['source_api'],
+                            'row_api_data_id' => $product_data['row_api_data_id'],
+                            'created_at'    => $product_data['created_at'],
+                            'updated_at'    => $product_data['updated_at']
+                        ]);
+                        $products_inserted_or_updated_count++;
+                    } else {
+                        $logger->error("警告: api_product_id '{$raw_data_item['api_product_id']}' に対応するproductsデータが見つかりませんでした。");
+                    }
+                }
+
+                $pdo->commit(); // トランザクションをコミット
+                $total_processed_records += $products_inserted_or_updated_count;
+                $logger->log("{$inserted_or_updated_count}件の生データを 'raw_api_data' にUPSERTしました。");
+                $logger->log("{$products_inserted_or_updated_count}件の商品データを 'products' にUPSERTしました。");
+                $logger->log("{$total_processed_records}件のデータをデータベースに正常に処理しました。次のバッチ処理に進みます。");
+
+            } catch (Exception $e) {
+                $pdo->rollBack(); // エラー発生時はロールバック
+                $logger->error("データベースUPSERT中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+                throw $e; // 上位のtry-catchブロックにエラーを再スロー
+            }
+
+            // バッファをクリア
+            $raw_data_buffer = [];
+            $products_buffer_temp = [];
+            $api_product_ids_in_batch = [];
+        }
+
+        $current_page++;
+        sleep(1); // APIへのリクエスト頻度を調整するため1秒待機
+    }
+
+    // ループ終了後、バッファに残っている未保存のデータを処理
+    if (!empty($raw_data_buffer)) {
+        $logger->log("処理終了。バッファに残っているデータをデータベースにUPSERTします。");
+        
+        // トランザクションを開始
+        $pdo->beginTransaction();
+        try {
+            $inserted_or_updated_count = 0;
+            $products_inserted_or_updated_count = 0;
+
+            foreach ($raw_data_buffer as $raw_data_item) {
+                // raw_api_data テーブルへのUPSERT
+                $stmt_raw_upsert->execute($raw_data_item);
+                $inserted_or_updated_count++;
+
+                // 挿入または更新されたraw_api_dataのIDを取得
+                $stmt_get_raw_id->execute([API_SOURCE_NAME, $raw_data_item['api_product_id']]);
+                $raw_api_data_id = $stmt_get_raw_id->fetchColumn();
+                
+                // products_buffer_temp に row_api_data_id を追加
+                if (isset($products_buffer_temp[$raw_data_item['api_product_id']])) {
+                    $product_data = $products_buffer_temp[$raw_data_item['api_product_id']];
+                    $product_data['row_api_data_id'] = $raw_api_data_id;
+                    
+                    // products テーブルへのUPSERT
+                    $stmt_products_upsert->execute([
+                        'product_id'    => $product_data['product_id'],
+                        'title'         => $product_data['title'],
+                        'release_date'  => $product_data['release_date'],
+                        'maker_name'    => $product_data['maker_name'],
+                        'genre'         => $product_data['genre'],
+                        'url'           => $product_data['url'],
+                        'image_url'     => $product_data['image_url'],
+                        'source_api'    => $product_data['source_api'],
+                        'row_api_data_id' => $product_data['row_api_data_id'],
+                        'created_at'    => $product_data['created_at'],
+                        'updated_at'    => $product_data['updated_at']
+                    ]);
+                    $products_inserted_or_updated_count++;
+                } else {
+                    $logger->error("警告: api_product_id '{$raw_data_item['api_product_id']}' に対応するproductsデータが見つかりませんでした。(最終バッチ)");
+                }
+            }
+
+            $pdo->commit(); // トランザクションをコミット
+            $total_processed_records += $products_inserted_or_updated_count;
+            $logger->log("{$inserted_or_updated_count}件の残りの生データを 'raw_api_data' にUPSERTしました。");
+            $logger->log("{$products_inserted_or_updated_count}件の残りの商品データを 'products' にUPSERTしました。");
+            $logger->log("残りのデータも正常にUPSERTされました。");
+
+        } catch (Exception $e) {
+            $pdo->rollBack(); // エラー発生時はロールバック
+            $logger->error("データベースUPSERT中にエラーが発生しました。(最終バッチ): " . $e->getMessage());
+            throw $e; // 上位のtry-catchブロックにエラーを再スロー
+        }
+    }
+
+    $logger->log("Duga APIからの全データ取得とデータベース保存処理が完了しました。");
+    $logger->log("合計処理済みレコード数: {$total_processed_records}件");
+
+} catch (Exception $e) {
+    $logger->error("Duga API処理中に致命的なエラーが発生しました: " . $e->getMessage());
+    $logger->error("エラー発生箇所: ファイル " . $e->getFile() . " 行 " . $e->getLine());
+} finally {
+    $pdo = null; // PDO接続を閉じる
+    $logger->log("データベース接続を閉じました。スクリプトを終了します。");
+}
+
+exit(0);
+?>

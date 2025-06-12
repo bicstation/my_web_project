@@ -1,17 +1,9 @@
-[2025-06-12 03:12:43] [INFO] Duga APIからのデータ取得とデータベース保存処理を開始します。
-[2025-06-12 03:12:43] [INFO] データベース接続に成功しました。
-[2025-06-12 03:12:43] [INFO] Agent ID is not specified, defaulting to '48043'.
-[2025-06-12 03:12:43] [INFO] Adult parameter is not specified, defaulting to '1'.
-[2025-06-12 03:12:43] [INFO] Sort parameter is not specified, defaulting to 'favorite'.
-[2025-06-12 03:12:43] [INFO] Banner ID is not specified, defaulting to '01'.
-[2025-06-12 03:12:43] [INFO] CLI Arguments: []
-[2025-06-12 03:12:43] [INFO] Duga APIからアイテムを取得中... (ページ: 1, offset: 1, 件数: 100)
-[2025-06-12 03:12:45] [INFO] Duga APIからアイテムを取得中... (ページ: 2, offset: 101, 件数: 100)
-[2025-06-12 03:12:47] [INFO] Duga APIからアイテムを取得中... (ページ: 3, offset: 201, 件数: 100)
-[2025-06-12 03:12:48] [INFO] Duga APIからアイテムを取得中... (ページ: 4, offset: 301, 件数: 100)
-[2025-06-12 03:12:51] [INFO] Duga APIからアイテムを取得中... (ページ: 5, offset: 401, 件数: 100)
-[2025-06-12 03:12:51] [INFO] バッファが500件に達しました。データベースへの挿入を開始します。
-[2025-06-12 03:12:51] [ERROR] データベース挿入中にエラーが発生しました: データベースへのバルクインサートに失敗しました: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'tiper.raw_api_data' doesn't exist
-[2025-06-12 03:12:51] [ERROR] Duga API処理中に致命的なエラーが発生しました: データベースへのバルクインサートに失敗しました: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'tiper.raw_api_data' doesn't exist
-[2025-06-12 03:12:51] [ERROR] エラー発生箇所: ファイル /var/www/html/includes/DbBatchInsert.php 行 107
-[2025-06-12 03:12:51] [INFO] データベース接続を閉じました。スクリプトを終了します。
+
+Warning: The use statement with non-compound name 'PDOException' has no effect in /var/www/html/cli/process_duga_api.php on line 18
+
+Warning: require_once(/var/www/html/cli/../../vendor/autoload.php): Failed to open stream: No such file or directory in /var/www/html/cli/process_duga_api.php on line 6
+
+Fatal error: Uncaught Error: Failed opening required '/var/www/html/cli/../../vendor/autoload.php' (include_path='.:/usr/local/lib/php') in /var/www/html/cli/process_duga_api.php:6
+Stack trace:
+#0 {main}
+  thrown in /var/www/html/cli/process_duga_api.php on line 6

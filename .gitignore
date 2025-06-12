@@ -1,0 +1,17 @@
+# Composer
+/vendor/
+/composer.lock
+
+# Environment variables
+.env
+.env.*.local
+
+# Logs
+*.log
+/app/*.log # appディレクトリ直下のログファイル
+
+# Other common ignored files
+.vscode/
+.DS_Store
+*.sqlite
+*.db

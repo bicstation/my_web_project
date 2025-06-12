@@ -2,7 +2,6 @@
 // C:\project\my_web_project\app\public\products_admin.php
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
-// session_start(); // ★修正: init.phpで既にセッションが開始されているため、この行は削除します。
 require_once __DIR__ . '/init.php'; // init.phpを読み込むことでsession_start()が実行されます
 
 // データベース接続設定ファイルを読み込む
@@ -36,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $keyword = $_POST['keyword'] ?? '';
     $genre_id = $_POST['genre_id'] ?? ''; // ジャンルIDの取得
 
-    // ★修正: 新しいDuga API検索パラメータの取得
+    // 新しいDuga API検索パラメータの取得
     // agentidのデフォルト値を数字の「48043」に変更
     $agentid = $_POST['agentid'] ?? '48043'; 
     $bannerid = $_POST['bannerid'] ?? '';
@@ -57,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!empty($genre_id)) {
         $cli_arguments[] = '--genre_id=' . escapeshellarg($genre_id);
     }
-    // ★修正: agentid が空でない場合のみ引数に追加 (空の場合はCLIスクリプトでデフォルト値が適用される)
+    // agentid が空でない場合のみ引数に追加 (空の場合はCLIスクリプトでデフォルト値が適用される)
     if (!empty($agentid)) { 
         $cli_arguments[] = '--agentid=' . escapeshellarg($agentid);
     }
@@ -74,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $arguments_string = implode(' ', $cli_arguments);
     
     // PHPコンテナ内で直接CLIスクリプトを実行するコマンドを構築
+    // nohup はバックグラウンドでプロセスを実行し、ログをリダイレクトします。
     $command = "nohup php " . escapeshellarg($cli_script_path) . " {$arguments_string} >> " . escapeshellarg($log_file_container_path) . " 2>&1 &";
     
     // Debugging: 実行されるコマンドをログに出力
@@ -101,140 +101,221 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 ?>
 
-<nav aria-label="breadcrumb">
-    <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
-        <li class="breadcrumb-item"><a href="/"><i class="fas fa-home me-1"></i>ホーム</a></li>
-        <li class="breadcrumb-item active" aria-current="page"><i class="fas fa-box me-1"></i>商品登録</li>
-    </ol>
-</nav>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品登録・管理</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome (アイコン用) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .container-fluid {
+            padding: 30px;
+            border-radius: 8px;
+        }
+        .card {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        .card-header {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+            padding: 15px 20px;
+        }
+        .btn-warning {
+            background-color: #ffc107;
+            border-color: #ffc107;
+            color: #212529;
+            font-weight: bold;
+            border-radius: 5px;
+            padding: 10px 20px;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border-color: #007bff;
+            font-weight: bold;
+            border-radius: 5px;
+            padding: 10px 20px;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #0056b3;
+        }
+        .alert {
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .breadcrumb {
+            background-color: #e9ecef;
+            border-radius: 0.25rem;
+        }
+        .breadcrumb-item a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .breadcrumb-item a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
 
-<div class="container-fluid bg-white p-4 rounded shadow-sm mt-3">
-    <h1 class="mb-4"><i class="fas fa-box me-2"></i>商品登録・管理</h1>
+<div class="container-fluid">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
+            <li class="breadcrumb-item"><a href="/"><i class="fas fa-home me-1"></i>ホーム</a></li>
+            <li class="breadcrumb-item active" aria-current="page"><i class="fas fa-box me-1"></i>商品登録</li>
+        </ol>
+    </nav>
 
-    <?php
-    // メッセージ表示エリア
-    if (!empty($message)) {
-        echo $message;
-    }
-    ?>
+    <div class="container-fluid bg-white p-4 rounded shadow-sm mt-3">
+        <h1 class="mb-4"><i class="fas fa-box me-2"></i>商品登録・管理</h1>
 
-    <p>このページでは、商品の登録と管理を行います。APIからの自動データ取得機能もここに統合できます。</p>
+        <?php
+        // メッセージ表示エリア
+        if (!empty($message)) {
+            echo $message;
+        }
+        ?>
 
-    <!-- CLIスクリプト実行トリガー -->
-    <div class="card mt-4 mb-4">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-sync-alt me-2"></i>Duga APIデータ取り込み</h5>
-        </div>
-        <div class="card-body">
-            <p>Duga APIから最新のアイテムデータを取得し、データベースに保存します。この処理はバックグラウンドで実行されます。</p>
-            <form action="" method="POST" onsubmit="return confirm('Duga APIからのデータ取り込みを開始しますか？大量のデータを処理するため時間がかかる場合があります。');">
-                <input type="hidden" name="action" value="run_duga_api_cli">
-                
-                <!-- API検索条件入力フィールド -->
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label for="start_date" class="form-label">リリース日 (開始)</label>
-                        <input type="date" class="form-control" id="start_date" name="start_date">
+        <p>このページでは、商品の登録と管理を行います。APIからの自動データ取得機能もここに統合できます。</p>
+
+        <!-- CLIスクリプト実行トリガー -->
+        <div class="card mt-4 mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-sync-alt me-2"></i>Duga APIデータ取り込み</h5>
+            </div>
+            <div class="card-body">
+                <p>Duga APIから最新のアイテムデータを取得し、データベースに保存します。この処理はバックグラウンドで実行されます。</p>
+                <form action="" method="POST" onsubmit="return confirm('Duga APIからのデータ取り込みを開始しますか？大量のデータを処理するため時間がかかる場合があります。');">
+                    <input type="hidden" name="action" value="run_duga_api_cli">
+                    
+                    <!-- API検索条件入力フィールド -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="start_date" class="form-label">リリース日 (開始)</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="end_date" class="form-label">リリース日 (終了)</label>
+                            <input type="date" class="form-control" id="end_date" name="end_date">
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <label for="end_date" class="form-label">リリース日 (終了)</label>
-                        <input type="date" class="form-control" id="end_date" name="end_date">
+                    <div class="mb-3">
+                        <label for="keyword" class="form-label">キーワード</label>
+                        <input type="text" class="form-control" id="keyword" name="keyword" placeholder="例: アクション">
                     </div>
-                </div>
-                <div class="mb-3">
-                    <label for="keyword" class="form-label">キーワード</label>
-                    <input type="text" class="form-control" id="keyword" name="keyword" placeholder="例: アクション">
-                </div>
-                <div class="mb-3">
-                    <label for="genre_id" class="form-label">ジャンルID</label>
-                    <input type="text" class="form-control" id="genre_id" name="genre_id" placeholder="例: 101 (APIドキュメントを参照)">
-                    <small class="form-text text-muted">複数のジャンルIDを指定する場合はカンマ区切り (例: 101,102)</small>
-                </div>
-                <!-- ★修正: 新しいDuga API検索条件入力フィールド -->
-                <div class="mb-3">
-                    <label for="agentid" class="form-label">Agent ID</label>
-                    <input type="text" class="form-control" id="agentid" name="agentid" value="48043" placeholder="例: 48043">
-                </div>
-                <div class="mb-3">
-                    <label for="bannerid" class="form-label">Banner ID</label>
-                    <input type="text" class="form-control" id="bannerid" name="bannerid" placeholder="例: 01">
-                </div>
-                <div class="mb-3">
-                    <label for="adult" class="form-label">成人向けコンテンツ (0/1)</label>
-                    <input type="text" class="form-control" id="adult" name="adult" placeholder="例: 1">
-                    <small class="form-text text-muted">0: 一般向け, 1: 成人向け</small>
-                </div>
-                <div class="mb-3">
-                    <label for="sort" class="form-label">ソート順</label>
-                    <input type="text" class="form-control" id="sort" name="sort" placeholder="例: favorite, rank, date">
-                    <small class="form-text text-muted">APIドキュメントで有効なソート順を確認してください。</small>
-                </div>
+                    <div class="mb-3">
+                        <label for="genre_id" class="form-label">ジャンルID</label>
+                        <input type="text" class="form-control" id="genre_id" name="genre_id" placeholder="例: 101 (APIドキュメントを参照)">
+                        <small class="form-text text-muted">複数のジャンルIDを指定する場合はカンマ区切り (例: 101,102)</small>
+                    </div>
+                    <!-- 新しいDuga API検索条件入力フィールド -->
+                    <div class="mb-3">
+                        <label for="agentid" class="form-label">Agent ID</label>
+                        <input type="text" class="form-control" id="agentid" name="agentid" value="48043" placeholder="例: 48043">
+                    </div>
+                    <div class="mb-3">
+                        <label for="bannerid" class="form-label">Banner ID</label>
+                        <input type="text" class="form-control" id="bannerid" name="bannerid" placeholder="例: 01">
+                    </div>
+                    <div class="mb-3">
+                        <label for="adult" class="form-label">成人向けコンテンツ (0/1)</label>
+                        <input type="text" class="form-control" id="adult" name="adult" placeholder="例: 1">
+                        <small class="form-text text-muted">0: 一般向け, 1: 成人向け</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="sort" class="form-label">ソート順</label>
+                        <input type="text" class="form-control" id="sort" name="sort" placeholder="例: favorite, rank, date">
+                        <small class="form-text text-muted">APIドキュメントで有効なソート順を確認してください。</small>
+                    </div>
 
-                <button type="submit" class="btn btn-warning"><i class="fas fa-cloud-download-alt me-2"></i>Duga APIデータ取り込み実行</button>
-            </form>
-            <small class="text-muted mt-2 d-block">
-                <strong>注意:</strong> この機能は開発環境でのテスト目的です。本番環境では、専用のバッチ処理システムやキューイングシステムを介して実行することを強く推奨します。
-                詳細なログは `app/duga_api_processing.log` で確認できます。
-            </small>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-cloud-download-alt me-2"></i>Duga APIデータ取り込み実行</button>
+                </form>
+                <small class="text-muted mt-2 d-block">
+                    <strong>注意:</strong> この機能は開発環境でのテスト目的です。本番環境では、専用のバッチ処理システムやキューイングシステムを介して実行することを強く推奨します。
+                    詳細なログは `app/duga_api_processing.log` で確認できます。
+                </small>
+            </div>
+        </div>
+
+
+        <!-- ここに商品登録フォームや、商品一覧表示などを配置 -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>新規商品登録 (手動)</h5>
+            </div>
+            <div class="card-body">
+                <form action="" method="POST">
+                    <div class="mb-3">
+                        <label for="productTitle" class="form-label">商品タイトル</label>
+                        <input type="text" class="form-control" id="productTitle" name="product_title" placeholder="商品名を入力してください" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="releaseDate" class="form-label">リリース日</label>
+                        <input type="date" class="form-control" id="releaseDate" name="release_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="sourceApi" class="form-label">APIソース (例: fanza)</label>
+                        <input type="text" class="form-control" id="sourceApi" name="source_api" placeholder="fanza, dmmなど" required>
+                    </div>
+                    <!-- 仮のAPIデータ入力欄。将来的にはAPIからの自動取得に置き換え -->
+                    <div class="mb-3">
+                        <label for="rowData" class="form-label">JSONデータ (API / CSV変換後)</label>
+                        <textarea class="form-control" id="rowData" name="row_data" rows="5" placeholder="APIから取得した生のJSONデータ、またはCSVをJSONに変換したデータを貼り付けてください"></textarea>
+                    </div>
+                    <button type="submit" name="action" value="add_product" class="btn btn-primary"><i class="fas fa-save me-2"></i>商品登録</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>登録済み商品一覧</h5>
+            </div>
+            <div class="card-body">
+                <p>ここに登録済み商品の一覧が表示されます。</p>
+                <?php
+                // 例: データベースから商品データを取得して表示
+                // $stmt = $pdo->query("SELECT id, title, release_date, source_api FROM products ORDER BY created_at DESC LIMIT 10");
+                // if ($stmt) {
+                //     echo "<table class='table table-bordered table-striped'>";
+                //     echo "<thead><tr><th>ID</th><th>タイトル</th><th>リリース日</th><th>ソース</th></tr></thead>";
+                //     echo "<tbody>";
+                //     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                //         echo "<tr>";
+                //         echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                //         echo "<td>" . htmlspecialchars($row['title']) . "</td>";
+                //         echo "<td>" . htmlspecialchars($row['release_date']) . "</td>";
+                //         echo "<td>" . htmlspecialchars($row['source_api']) . "</td>";
+                //         echo "</tr>";
+                //     }
+                //     echo "</tbody></table>";
+                // } else {
+                //     echo "<p class='alert alert-info'>まだ商品が登録されていません。</p>";
+                // }
+                ?>
+            </div>
         </div>
     </div>
 
-
-    <!-- ここに商品登録フォームや、商品一覧表示などを配置 -->
-    <div class="card mt-4">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>新規商品登録 (手動)</h5>
-        </div>
-        <div class="card-body">
-            <form action="" method="POST">
-                <div class="mb-3">
-                    <label for="productTitle" class="form-label">商品タイトル</label>
-                    <input type="text" class="form-control" id="productTitle" name="product_title" placeholder="商品名を入力してください" required>
-                </div>
-                <div class="mb-3">
-                    <label for="releaseDate" class="form-label">リリース日</label>
-                    <input type="date" class="form-control" id="releaseDate" name="release_date" required>
-                </div>
-                <div class="mb-3">
-                    <label for="sourceApi" class="form-label">APIソース (例: fanza)</label>
-                    <input type="text" class="form-control" id="sourceApi" name="source_api" placeholder="fanza, dmmなど" required>
-                </div>
-                <!-- 仮のAPIデータ入力欄。将来的にはAPIからの自動取得に置き換え -->
-                <div class="mb-3">
-                    <label for="rowData" class="form-label">JSONデータ (API / CSV変換後)</label>
-                    <textarea class="form-control" id="rowData" name="row_data" rows="5" placeholder="APIから取得した生のJSONデータ、またはCSVをJSONに変換したデータを貼り付けてください"></textarea>
-                </div>
-                <button type="submit" name="action" value="add_product" class="btn btn-primary"><i class="fas fa-save me-2"></i>商品登録</button>
-            </form>
-        </div>
-    </div>
-
-    <div class="card mt-4">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-list me-2"></i>登録済み商品一覧</h5>
-        </div>
-        <div class="card-body">
-            <p>ここに登録済み商品の一覧が表示されます。</p>
-            <?php
-            // 例: データベースから商品データを取得して表示
-            // $stmt = $pdo->query("SELECT id, title, release_date, source_api FROM products ORDER BY created_at DESC LIMIT 10");
-            // if ($stmt) {
-            //     echo "<table class='table table-bordered table-striped'>";
-            //     echo "<thead><tr><th>ID</th><th>タイトル</th><th>リリース日</th><th>ソース</th></tr></thead>";
-            //     echo "<tbody>";
-            //     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            //     echo "<tr>";
-            //     echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-            //     echo "<td>" . htmlspecialchars($row['title']) . "</td>";
-            //     echo "<td>" . htmlspecialchars($row['release_date']) . "</td>";
-            //     echo "<td>" . htmlspecialchars($row['source_api']) . "</td>";
-            //     echo "</tr>";
-            //     }
-            //     echo "</tbody></table>";
-            // } else {
-            //     echo "<p class='alert alert-info'>まだ商品が登録されていません。</p>";
-            // }
-            ?>
-        </div>
-    </div>
-</div>
+    <!-- Bootstrap JS Bundle (Popper.jsを含む) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
