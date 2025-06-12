@@ -1,11 +1,35 @@
 <?php
 // C:\project\my_web_project\app\public\products_admin.php
 
-// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
-require_once __DIR__ . '/init.php'; // init.phpを読み込むことでsession_start()が実行されます
+// Composerのオートローダーを読み込む
+// これにより、App名前空間下のクラスや、vlucas/phpdotenvなどのComposerが管理するライブラリが自動的にロードされます。
+require_once __DIR__ . '/../../vendor/autoload.php';
 
-// データベース接続設定ファイルを読み込む
-require_once __DIR__ . '/../includes/db_config.php';
+// Dotenvライブラリを使って.envファイルをロード
+// プロジェクトルートにある .env ファイルを指す
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv->load();
+
+// 名前空間を使用するクラスをインポート
+use App\Core\Logger;
+use App\Core\Database;
+use App\Api\DugaApiClient;
+use App\Util\DbBatchInsert;
+// use PDOException; // PDOException はグローバル名前空間にあるため、useステートメントは不要です。
+
+// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
+// init.php 内で Composer のオートローダーを読み込んだり、.env をロードしたりする必要はなくなります。
+// init.php は主にセッション開始、認証チェックなどの初期化処理に専念します。
+require_once __DIR__ . '/init.php';
+
+// データベース接続設定を.envから取得
+$dbConfig = [
+    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
+    'user'    => $_ENV['DB_USER'] ?? 'root',
+    'pass'    => $_ENV['DB_PASS'] ?? 'password',
+    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+];
 
 // このページは認証が必要な場合、ここでセッションチェックを行う
 if (!isset($_SESSION['user_id'])) {
@@ -13,10 +37,46 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-// データベース接続
-$pdo = connectDB();
+// -----------------------------------------------------
+// 初期設定とリソースの準備 (クラスのインスタンス化)
+// -----------------------------------------------------
+$logger = null;
+$database = null;
+$dugaApiClient = null;
+$dbBatchInserter = null; // 必要であればインスタンス化
 
-$message = ""; // 成功・失敗メッセージを格納する変数
+try {
+    // Loggerクラスのインスタンス化
+    $logger = new Logger('products_admin_processing.log'); // 管理画面専用のログファイル
+    $logger->log("products_admin.php ページアクセス処理を開始します。");
+
+    // データベース接続の確立
+    $database = new Database($dbConfig, $logger);
+    $pdo = $database->getConnection(); // PDOインスタンスを取得
+
+    // Duga APIクライアントのインスタンス化
+    $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'https://api.duga.jp/v1/';
+    $dugaApiKey = $_ENV['DUGA_API_KEY'] ?? 'YOUR_DUGA_API_KEY_HERE';
+    $dugaApiClient = new DugaApiClient($dugaApiUrl, $dugaApiKey, $logger);
+
+    // DbBatchInsertヘルパークラスのインスタンス化 (CLIトリガーとは直接関係ないが、手動登録で必要になるかも)
+    $dbBatchInserter = new DbBatchInsert($database, $logger);
+
+
+} catch (Exception $e) {
+    // 初期設定段階でのエラーをログに記録し、スクリプトを終了
+    error_log("Webページ初期設定エラー: " . $e->getMessage()); // PHPのエラーログに出力
+    if ($logger) {
+        $logger->error("Webページ初期設定中に致命的なエラーが発生しました: " . $e->getMessage());
+    }
+    // エラーメッセージをユーザーに表示
+    $message = "<div class='alert alert-danger'>初期設定中にエラーが発生しました。ログを確認してください。<br>" . htmlspecialchars($e->getMessage()) . "</div>";
+    // 以降の処理は実行しない
+    die($message);
+}
+
+$message = ""; // 成功・失敗メッセージを格納する変数 (初期化をtry-catch後に移動)
+
 
 // -----------------------------------------------------
 // Duga API CLIスクリプト実行トリガーの処理
@@ -27,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $log_file_container_path = '/var/www/html/duga_api_processing.log';
     
     // CLIスクリプトのパス（Dockerコンテナ内のパス）
-    $cli_script_path = '/var/www/html/cli/process_duga_api.php';
+    $cli_script_path = '/var/www/html/app/cli/process_duga_api.php'; // Docker内パスを修正
     
     // API検索条件の取得
     $start_date = $_POST['start_date'] ?? '';
@@ -35,9 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $keyword = $_POST['keyword'] ?? '';
     $genre_id = $_POST['genre_id'] ?? ''; // ジャンルIDの取得
 
-    // 新しいDuga API検索パラメータの取得
-    // agentidのデフォルト値を数字の「48043」に変更
-    $agentid = $_POST['agentid'] ?? '48043'; 
+    $agentid = $_POST['agentid'] ?? ''; // CLIスクリプトに任せる場合は空でよい
     $bannerid = $_POST['bannerid'] ?? '';
     $adult = $_POST['adult'] ?? '';
     $sort = $_POST['sort'] ?? '';
@@ -56,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!empty($genre_id)) {
         $cli_arguments[] = '--genre_id=' . escapeshellarg($genre_id);
     }
-    // agentid が空でない場合のみ引数に追加 (空の場合はCLIスクリプトでデフォルト値が適用される)
+    // agentid がフォームで指定されていれば追加 (CLIスクリプトのデフォルト値を上書き)
     if (!empty($agentid)) { 
         $cli_arguments[] = '--agentid=' . escapeshellarg($agentid);
     }
@@ -74,30 +132,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     // PHPコンテナ内で直接CLIスクリプトを実行するコマンドを構築
     // nohup はバックグラウンドでプロセスを実行し、ログをリダイレクトします。
+    // composer.jsonとvendorが/var/www/html直下にあるため、cliスクリプトのパスを修正
     $command = "nohup php " . escapeshellarg($cli_script_path) . " {$arguments_string} >> " . escapeshellarg($log_file_container_path) . " 2>&1 &";
     
     // Debugging: 実行されるコマンドをログに出力
-    error_log("Attempting to execute Duga API CLI via shell_exec: " . $command);
+    $logger->log("Attempting to execute Duga API CLI via shell_exec: " . $command);
 
     // コマンド実行
     $output = shell_exec($command);
 
     if ($output === null || $output === false) {
         $message = "<div class='alert alert-danger'>Duga API CLIスクリプトの実行リクエストに失敗しました。<br>詳細についてはサーバーログを確認してください。</div>";
-        error_log("Failed to initiate Duga API CLI script. shell_exec output: " . print_r($output, true));
+        $logger->error("Failed to initiate Duga API CLI script. shell_exec output: " . print_r($output, true));
     } else {
         $message = "<div class='alert alert-success'>Duga APIからのデータ取得と保存処理をバックグラウンドで開始しました。<br>進行状況は `app/duga_api_processing.log` を確認してください。</div>";
-        error_log("Duga API CLI script initiated successfully. shell_exec output: " . $output);
+        $logger->log("Duga API CLI script initiated successfully. shell_exec output: " . $output);
     }
 }
 
 
 // ここに商品の追加、編集、削除などのロジックを記述
-// 例:
-// if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_product') {
-//     // 商品追加処理
-//     // フォームからのデータを受け取り、バリデーション後、productsテーブルやrow_api_dataテーブルに挿入
-// }
+// 例: 手動商品登録の処理 (DbBatchInsert を使用)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_product') {
+    $product_title = $_POST['product_title'] ?? '';
+    $release_date = $_POST['release_date'] ?? '';
+    $source_api = $_POST['source_api'] ?? '';
+    $row_data = $_POST['row_data'] ?? ''; // JSONデータ
+
+    if (empty($product_title) || empty($release_date) || empty($source_api)) {
+        $message = "<div class='alert alert-danger'>商品タイトル、リリース日、APIソースは必須です。</div>";
+        $logger->error("手動商品登録失敗: 必須フィールドが空です。");
+    } else {
+        try {
+            // raw_api_data に挿入
+            $raw_api_data_entry = [
+                'source_name'    => $source_api,
+                'api_product_id' => uniqid('manual_'), // 手動登録の場合、ユニークなIDを生成
+                'row_json_data'  => $row_data,
+                'fetched_at'     => date('Y-m-d H:i:s'),
+                'updated_at'     => date('Y-m-d H:i:s')
+            ];
+            $dbBatchInserter->insertOrUpdate('raw_api_data', [$raw_api_data_entry], ['row_json_data', 'fetched_at', 'updated_at']);
+            
+            // 挿入された raw_api_data のIDを取得
+            // raw_data_entry['api_product_id'] の代わりに $raw_data_entry['api_product_id'] を使用
+            $raw_api_data_id = $dbBatchInserter->getRawApiDataId($raw_api_data_entry['source_name'], $raw_api_data_entry['api_product_id']);
+
+            if ($raw_api_data_id) {
+                // products テーブルに挿入
+                $product_entry = [
+                    'product_id'    => $raw_api_data_entry['api_product_id'], // raw_api_data と同じIDを使用
+                    'title'         => $product_title,
+                    'release_date'  => $release_date,
+                    'maker_name'    => null, // 手動登録ではmaker_nameやgenreは空または別途入力フィールドが必要
+                    'genre'         => null,
+                    'url'           => null,
+                    'image_url'     => null,
+                    'source_api'    => $source_api,
+                    'row_api_data_id' => $raw_api_data_id,
+                    'created_at'    => date('Y-m-d H:i:s'),
+                    'updated_at'    => date('Y-m-d H:i:s')
+                ];
+                $dbBatchInserter->insertOrUpdate('products', [$product_entry], ['title', 'release_date', 'maker_name', 'genre', 'url', 'image_url', 'source_api', 'row_api_data_id', 'updated_at']);
+                
+                $message = "<div class='alert alert-success'>商品「" . htmlspecialchars($product_title) . "」が正常に登録されました。</div>";
+                $logger->log("手動商品登録成功: " . $product_title);
+            } else {
+                $message = "<div class='alert alert-danger'>手動商品登録に失敗しました: raw_api_data のIDを取得できませんでした。</div>";
+                $logger->error("手動商品登録失敗: raw_api_data のIDが見つかりません。");
+            }
+
+        } catch (Exception $e) {
+            $message = "<div class='alert alert-danger'>商品登録中にエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
+            $logger->error("手動商品登録中にエラー: " . $e->getMessage());
+        }
+    }
+}
+// -----------------------------------------------------
+// 商品一覧の表示ロジック (DbBatchInsertを使用しない)
+// -----------------------------------------------------
+$products = [];
+try {
+    $stmt = $pdo->query("SELECT id, product_id, title, release_date, source_api FROM products ORDER BY created_at DESC LIMIT 20");
+    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) { // PDOException はグローバル名前空間にあるため、\PDOException としても良い
+    $logger->error("商品一覧の取得中にエラーが発生しました: " . $e->getMessage());
+    $message = "<div class='alert alert-danger'>商品一覧の取得中にエラーが発生しました。</div>";
+}
 
 ?>
 
@@ -263,6 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
             <div class="card-body">
                 <form action="" method="POST">
+                    <input type="hidden" name="action" value="add_product">
                     <div class="mb-3">
                         <label for="productTitle" class="form-label">商品タイトル</label>
                         <input type="text" class="form-control" id="productTitle" name="product_title" placeholder="商品名を入力してください" required>
@@ -280,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <label for="rowData" class="form-label">JSONデータ (API / CSV変換後)</label>
                         <textarea class="form-control" id="rowData" name="row_data" rows="5" placeholder="APIから取得した生のJSONデータ、またはCSVをJSONに変換したデータを貼り付けてください"></textarea>
                     </div>
-                    <button type="submit" name="action" value="add_product" class="btn btn-primary"><i class="fas fa-save me-2"></i>商品登録</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>商品登録</button>
                 </form>
             </div>
         </div>
@@ -290,27 +412,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <h5 class="mb-0"><i class="fas fa-list me-2"></i>登録済み商品一覧</h5>
             </div>
             <div class="card-body">
-                <p>ここに登録済み商品の一覧が表示されます。</p>
-                <?php
-                // 例: データベースから商品データを取得して表示
-                // $stmt = $pdo->query("SELECT id, title, release_date, source_api FROM products ORDER BY created_at DESC LIMIT 10");
-                // if ($stmt) {
-                //     echo "<table class='table table-bordered table-striped'>";
-                //     echo "<thead><tr><th>ID</th><th>タイトル</th><th>リリース日</th><th>ソース</th></tr></thead>";
-                //     echo "<tbody>";
-                //     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                //         echo "<tr>";
-                //         echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                //         echo "<td>" . htmlspecialchars($row['title']) . "</td>";
-                //         echo "<td>" . htmlspecialchars($row['release_date']) . "</td>";
-                //         echo "<td>" . htmlspecialchars($row['source_api']) . "</td>";
-                //         echo "</tr>";
-                //     }
-                //     echo "</tbody></table>";
-                // } else {
-                //     echo "<p class='alert alert-info'>まだ商品が登録されていません。</p>";
-                // }
-                ?>
+                <p>登録済み商品の一覧:</p>
+                <?php if (!empty($products)): ?>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>製品ID</th>
+                                <th>タイトル</th>
+                                <th>リリース日</th>
+                                <th>ソースAPI</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($products as $product): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($product['id']) ?></td>
+                                <td><?= htmlspecialchars($product['product_id']) ?></td>
+                                <td><?= htmlspecialchars($product['title']) ?></td>
+                                <td><?= htmlspecialchars($product['release_date']) ?></td>
+                                <td><?= htmlspecialchars($product['source_api']) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php else: ?>
+                <p class='alert alert-info'>まだ商品が登録されていません。</p>
+                <?php endif; ?>
             </div>
         </div>
     </div>

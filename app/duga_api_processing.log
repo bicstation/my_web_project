@@ -1,9 +1,12 @@
-
-Warning: The use statement with non-compound name 'PDOException' has no effect in /var/www/html/cli/process_duga_api.php on line 18
-
-Warning: require_once(/var/www/html/cli/../../vendor/autoload.php): Failed to open stream: No such file or directory in /var/www/html/cli/process_duga_api.php on line 6
-
-Fatal error: Uncaught Error: Failed opening required '/var/www/html/cli/../../vendor/autoload.php' (include_path='.:/usr/local/lib/php') in /var/www/html/cli/process_duga_api.php:6
-Stack trace:
-#0 {main}
-  thrown in /var/www/html/cli/process_duga_api.php on line 6
+[2025-06-12 16:26:57] [INFO] Duga APIからのデータ取得とデータベース保存処理を開始します。
+[2025-06-12 16:26:57] [INFO] データベース接続に成功しました。
+[2025-06-12 16:26:57] [INFO] DugaApiClient initialized with API URL: https://api.duga.jp/v1/
+[2025-06-12 16:26:57] [INFO] DbBatchInsert initialized.
+[2025-06-12 16:26:57] [INFO] CLI Arguments processed: {"start_date":null,"end_date":null,"keyword":null,"genre_id":null,"agentid":"48043","bannerid":"01","adult":"1","sort":"favorite"}
+[2025-06-12 16:26:57] [INFO] Duga APIからアイテムを取得中... (ページ: 1, offset: 1, 件数: 100)
+[2025-06-12 16:26:57] [INFO] Requesting Duga API URL: https://api.duga.jp/v1/item?offset=1&hits=100&apikey=HJtCqdpgl8tVorhyz7Lr&agentid=48043&bannerid=01&adult=1&sort=favorite
+[2025-06-12 16:26:58] [ERROR] cURL error when fetching Duga API: Could not resolve host: api.duga.jp
+[2025-06-12 16:26:58] [INFO] Duga APIから追加のアイテムデータが取得できませんでした。全てのAPIデータの取得が完了しました。
+[2025-06-12 16:26:58] [INFO] Duga APIからの全データ取得とデータベース保存処理が完了しました。
+[2025-06-12 16:26:58] [INFO] 合計処理済みレコード数: 0件
+[2025-06-12 16:26:58] [INFO] スクリプトを終了します。

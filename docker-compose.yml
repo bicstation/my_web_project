@@ -9,52 +9,46 @@ services:
     ports:
       - "80:80"
     volumes:
-      # メインアプリケーションのpublicディレクトリへのマウント
-      - ./app/public:/var/www/html/public
-      # WordPressブログ用のディレクトリへのマウント（Nginxがアクセスするパス）
-      - ./wordpress_blog:/var/www/html/blog
-      # Nginxの設定ファイルディレクトリへのマウント
+      - .:/var/www/html # プロジェクトルート全体をコンテナの /var/www/html にマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
     depends_on:
       - php
       - mysql
       - phpmyadmin
-      - blog_wordpress_service # WordPressサービス名を変更
+      - blog_wordpress_service
     networks:
       - app-network
 
   php:
     build: ./php
     volumes:
-      # メインアプリケーションのルートディレクトリへのマウント
-      - ./app:/var/www/html
-      - ./wordpress_blog:/var/www/html/blog
+      - .:/var/www/html 
     environment:
       DB_HOST: ${DB_HOST}
       DB_USER: tiper
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_PASSWORD: ${DB_PASSWORD} # MySQLコンテナへのパスワード (使われないが、WordPress用などで残す場合)
       DB_NAME: ${DB_NAME}
-      DUGA_API_KEY: ${DUGA_API_KEY} # ★追加: DUGA_API_KEYを明示的にPHPサービスへ渡す
-      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
+      DB_PASS: ${DB_PASSWORD} # ★追加: PHPアプリケーションが使用するDBパスワード
+      DUGA_API_KEY: ${DUGA_API_KEY}
+      TZ: Asia/Tokyo
     networks:
       - app-network
 
   mysql:
     image: mysql:8.0
-    container_name: my_web_project-mysql-1 # コンテナ名を明示的に指定（推奨）
+    container_name: my_web_project-mysql-1
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
-      # WordPressが使用するデータベースとユーザーをMySQLコンテナに明示的に作成させる
-      MYSQL_DATABASE: ${DB_NAME} # Main app DB name
-      MYSQL_USER: tiper # Main app DBのユーザー
-      MYSQL_PASSWORD: ${DB_PASSWORD} # Main app DBのパスワード (DB_PASSWORDを使用)
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: tiper
+      MYSQL_PASSWORD: ${DB_PASSWORD}
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
-      WORDPRESS_DB_USER: tiper # WordPressユーザー
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # WordPressパスワードから .env
-      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定 (MySQLも設定するとログやDBのタイムスタンプが一致します)
+      WORDPRESS_DB_USER: tiper
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./app/database:/db_scripts # databaseディレクトリをMySQLコンテナにマウント
+      - ./app/database:/db_scripts
     ports:
       - "3306:3306"
     networks:
@@ -64,8 +58,8 @@ services:
     image: phpmyadmin/phpmyadmin
     environment:
       PMA_HOST: mysql
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
-      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Tokyo
     ports:
       - "8080:80"
     depends_on:
@@ -73,20 +67,17 @@ services:
     networks:
       - app-network
 
-  # WordPress サービス
   blog_wordpress_service:
     image: wordpress:latest
     container_name: wordpress_blog_container
     environment:
       WORDPRESS_DB_HOST: mysql:3306
-      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME} # .envから取得
-      WORDPRESS_DB_USER: tiper # WordPress DBのユーザー
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # .envから取得
-      WORDPRESS_DEBUG: 1 # デバッグモードを有効にする
-      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_USER: tiper
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DEBUG: 1
+      TZ: Asia/Tokyo
     volumes:
-      # WordPressのデータが永続化される場所（Docker内部の/var/www/html）
-      # ここをホストの./wordpress_blogにマウントすることでNginxやPHPコンテナと共有する
       - ./wordpress_blog:/var/www/html
     depends_on:
       - mysql
@@ -99,5 +90,3 @@ networks:
 
 volumes:
   mysql_data:
-  # WordPress専用のボリュームではなく、ホスト側のディレクトリをマウントするように変更
-  # wordpress_data: # これは削除、またはコメントアウト
