@@ -57,6 +57,12 @@ if (isset($_SESSION['user_id'])) {
         <h3 class="my-0 me-auto">
             <a href="/" class="text-white text-decoration-none">Tiper Live</a>
         </h3>
+        
+        <!-- ★追加: JavaScriptで時刻を更新する要素 -->
+        <div class="current-time me-3" id="current-time-display">
+            読み込み中...
+        </div>
+
         <nav class="navbar navbar-expand-md navbar-dark p-0">
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
@@ -116,3 +122,30 @@ if (isset($_SESSION['user_id'])) {
         </nav>
     </div>
 </header>
+
+<!-- JavaScript で時刻をリアルタイム更新 -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const timeDisplay = document.getElementById('current-time-display');
+
+    function updateTime() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        
+        // ローカルタイムゾーンの略称を取得（ブラウザ依存）
+        const timeZone = now.toLocaleTimeString('en', { timeZoneName:'short' }).split(' ')[2] || '';
+
+        timeDisplay.textContent = `時刻: ${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    // 初回表示
+    updateTime();
+    // 1秒ごとに更新
+    setInterval(updateTime, 1000);
+});
+</script>

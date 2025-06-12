@@ -28,13 +28,14 @@ services:
     volumes:
       # メインアプリケーションのルートディレクトリへのマウント
       - ./app:/var/www/html
-      # WordPressブログ用のディレクトリへのマウント（PHP-FPMがアクセスするパス）
       - ./wordpress_blog:/var/www/html/blog
     environment:
       DB_HOST: ${DB_HOST}
-      DB_USER: ${DB_USER}
+      DB_USER: tiper
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
+      DUGA_API_KEY: ${DUGA_API_KEY} # ★追加: DUGA_API_KEYを明示的にPHPサービスへ渡す
+      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
     networks:
       - app-network
 
@@ -44,11 +45,16 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
       # WordPressが使用するデータベースとユーザーをMySQLコンテナに明示的に作成させる
-      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}
-      MYSQL_USER: ${WORDPRESS_DB_USER}
-      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME} # Main app DB name
+      MYSQL_USER: tiper # Main app DBのユーザー
+      MYSQL_PASSWORD: ${DB_PASSWORD} # Main app DBのパスワード (DB_PASSWORDを使用)
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_USER: tiper # WordPressユーザー
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # WordPressパスワードから .env
+      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定 (MySQLも設定するとログやDBのタイムスタンプが一致します)
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./app/database:/db_scripts # databaseディレクトリをMySQLコンテナにマウント
     ports:
       - "3306:3306"
     networks:
@@ -59,6 +65,7 @@ services:
     environment:
       PMA_HOST: mysql
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # .envのMYSQL_ROOT_PASSWORDを使用
+      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
     ports:
       - "8080:80"
     depends_on:
@@ -73,9 +80,10 @@ services:
     environment:
       WORDPRESS_DB_HOST: mysql:3306
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME} # .envから取得
-      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER} # .envから取得
+      WORDPRESS_DB_USER: tiper # WordPress DBのユーザー
       WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # .envから取得
       WORDPRESS_DEBUG: 1 # デバッグモードを有効にする
+      TZ: Asia/Tokyo # ★追加: タイムゾーンを東京に設定
     volumes:
       # WordPressのデータが永続化される場所（Docker内部の/var/www/html）
       # ここをホストの./wordpress_blogにマウントすることでNginxやPHPコンテナと共有する
