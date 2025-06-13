@@ -34,13 +34,25 @@ class DugaApiClient
      */
     public function getItems(int $offset, int $hits, array $additionalParams = []): array
     {
+        // APIキーが設定されているか確認
+        if (empty($this->apiKey) || $this->apiKey === 'YOUR_DUGA_API_KEY_HERE') {
+            $this->logger->error("Duga API Key is not set or is invalid. Please check your your .env file.");
+            return []; // キーがない場合は処理を中断
+        }
+
+        // Duga APIの正しいパラメータ名と必須パラメータを追加
         $queryParams = array_merge([
             'offset' => $offset,
             'hits'   => $hits,
-            'apikey' => $this->apiKey,
+            'version' => '1.2',  // ★追加: 必須のversionパラメータ
+            'appid' => $this->apiKey, // ★修正: apikeyをappidに変更
+            'format' => 'json' // ★追加: 必須のformatパラメータをjsonに設定
         ], $additionalParams);
 
-        $url = $this->apiUrl . 'item?' . http_build_query($queryParams);
+        // API URLを正しい形式に修正
+        // Duga APIの検索エンドポイントは通常 "search" です
+        // そして、クエリパラメータを直接後ろに付けます
+        $url = $this->apiUrl . '?' . http_build_query($queryParams); // ★修正: '/item' を削除し、URL構造を変更
         $this->logger->log("Requesting Duga API URL: " . $url);
 
         $ch = curl_init();
@@ -71,8 +83,18 @@ class DugaApiClient
         }
         
         // Duga APIのレスポンス構造に応じて、必要なデータを抽出
-        // 一般的なDuga APIは 'items' または 'result' キーの下に商品データを持つことが多い
-        // ここでは 'items' キーを想定していますが、APIドキュメントに合わせて調整してください
-        return $data['items'] ?? []; 
+        // 正しいAPIのレスポンスは 'result' キーの下に商品データを持つことが多いと仮定
+        $items = $data['result'] ?? []; // ★修正: 'items' ではなく 'result' を優先
+        if (empty($items)) {
+            $this->logger->log("Duga API returned empty 'result' array or 'result' key not found.");
+            // 旧APIの 'items' も念のため確認（もし混合する可能性があれば）
+            if (isset($data['items']) && is_array($data['items'])) {
+                $items = $data['items'];
+                $this->logger->log("Fallback: Duga API returned 'items' array.");
+            }
+        } else {
+            $this->logger->log("Duga API returned " . count($items) . " items.");
+        }
+        return $items; 
     }
 }

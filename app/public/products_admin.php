@@ -14,8 +14,8 @@ $dotenv->load();
 use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
-use App\Util\DbBatchInsert;
-// use PDOException; // PDOException はグローバル名前空間にあるため、useステートメントは不要です。
+use App\Util\DbBatchInsert; // 必要に応じてDbBatchInsertもインポート
+// use PDOException;           // PDO関連の例外をキャッチするために追加 - この行を削除しました
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
 // init.php 内で Composer のオートローダーを読み込んだり、.env をロードしたりする必要はなくなります。
@@ -67,7 +67,7 @@ try {
     // 初期設定段階でのエラーをログに記録し、スクリプトを終了
     error_log("Webページ初期設定エラー: " . $e->getMessage()); // PHPのエラーログに出力
     if ($logger) {
-        $logger->error("Webページ初期設定中に致命的なエラーが発生しました: " . $e->getMessage());
+        $logger->error("Webページ初期設定中に致命的なエラーが発生しました: " . htmlspecialchars($e->getMessage()));
     }
     // エラーメッセージをユーザーに表示
     $message = "<div class='alert alert-danger'>初期設定中にエラーが発生しました。ログを確認してください。<br>" . htmlspecialchars($e->getMessage()) . "</div>";
@@ -84,10 +84,11 @@ $message = ""; // 成功・失敗メッセージを格納する変数 (初期化
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'run_duga_api_cli') {
     // ログファイルのパス (CLIスクリプトが出力するログと同じ場所)
     // コンテナ内のパスに変換されることを想定
-    $log_file_container_path = '/var/www/html/duga_api_processing.log';
-    
+    $log_file_container_path = '/var/www/html/app/duga_api_processing.log'; // ★修正: app ディレクトリを明示的に指定
+
     // CLIスクリプトのパス（Dockerコンテナ内のパス）
-    $cli_script_path = '/var/www/html/app/cli/process_duga_api.php'; // Docker内パスを修正
+    // プロジェクトルートが /var/www/html にマウントされているため、正しいパスは /var/www/html/app/cli/process_duga_api.php
+    $cli_script_path = '/var/www/html/app/cli/process_duga_api.php'; // ★修正: app ディレクトリを明示的に指定
     
     // API検索条件の取得
     $start_date = $_POST['start_date'] ?? '';
@@ -132,21 +133,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     // PHPコンテナ内で直接CLIスクリプトを実行するコマンドを構築
     // nohup はバックグラウンドでプロセスを実行し、ログをリダイレクトします。
-    // composer.jsonとvendorが/var/www/html直下にあるため、cliスクリプトのパスを修正
     $command = "nohup php " . escapeshellarg($cli_script_path) . " {$arguments_string} >> " . escapeshellarg($log_file_container_path) . " 2>&1 &";
     
     // Debugging: 実行されるコマンドをログに出力
     $logger->log("Attempting to execute Duga API CLI via shell_exec: " . $command);
 
     // コマンド実行
-    $output = shell_exec($command);
+    $output = shell_exec($command); // shell_exec はコマンドの標準出力のみを返します。バックグラウンド実行では通常空です。
 
-    if ($output === null || $output === false) {
-        $message = "<div class='alert alert-danger'>Duga API CLIスクリプトの実行リクエストに失敗しました。<br>詳細についてはサーバーログを確認してください。</div>";
-        $logger->error("Failed to initiate Duga API CLI script. shell_exec output: " . print_r($output, true));
+    // shell_exec が 'false' を返した場合のみ、コマンドの実行開始自体に失敗したと判断します。
+    // 'null' や空文字列は、コマンドがバックグラウンドで起動し、即座に標準出力がなかったことを意味します。
+    if ($output === false) {
+        $message = "<div class='alert alert-danger'>Duga API CLIスクリプトの実行リクエストに失敗しました。<br>このサーバー環境では、`php`コマンドまたは`shell_exec`の実行権限に問題がある可能性があります。詳細はサーバーログを確認してください。</div>";
+        $logger->error("Failed to execute Duga API CLI command (shell_exec returned false). Command: '{$command}'");
     } else {
+        // コマンドが起動できたと判断し、成功メッセージを表示
         $message = "<div class='alert alert-success'>Duga APIからのデータ取得と保存処理をバックグラウンドで開始しました。<br>進行状況は `app/duga_api_processing.log` を確認してください。</div>";
-        $logger->log("Duga API CLI script initiated successfully. shell_exec output: " . $output);
+        $logger->log("Duga API CLI script initiated (command sent to shell). Output (if any): " . ($output ?? 'NULL')); // nullの場合も明示的にログに記録
     }
 }
 
@@ -175,7 +178,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $dbBatchInserter->insertOrUpdate('raw_api_data', [$raw_api_data_entry], ['row_json_data', 'fetched_at', 'updated_at']);
             
             // 挿入された raw_api_data のIDを取得
-            // raw_data_entry['api_product_id'] の代わりに $raw_data_entry['api_product_id'] を使用
             $raw_api_data_id = $dbBatchInserter->getRawApiDataId($raw_api_data_entry['source_name'], $raw_api_data_entry['api_product_id']);
 
             if ($raw_api_data_id) {
@@ -204,7 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         } catch (Exception $e) {
             $message = "<div class='alert alert-danger'>商品登録中にエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
-            $logger->error("手動商品登録中にエラー: " . $e->getMessage());
+            $logger->error("手動商品登録中にエラー: " . htmlspecialchars($e->getMessage()));
         }
     }
 }
@@ -215,8 +217,8 @@ $products = [];
 try {
     $stmt = $pdo->query("SELECT id, product_id, title, release_date, source_api FROM products ORDER BY created_at DESC LIMIT 20");
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) { // PDOException はグローバル名前空間にあるため、\PDOException としても良い
-    $logger->error("商品一覧の取得中にエラーが発生しました: " . $e->getMessage());
+} catch (PDOException $e) {
+    $logger->error("商品一覧の取得中にエラーが発生しました: " . htmlspecialchars($e->getMessage()));
     $message = "<div class='alert alert-danger'>商品一覧の取得中にエラーが発生しました。</div>";
 }
 

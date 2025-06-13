@@ -15,7 +15,7 @@ use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert;
-use PDOException; // PDO関連の例外をキャッチするために追加
+// use PDOException; // PDOException はグローバル名前空間にあるため、useステートメントは不要です。
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
@@ -30,7 +30,7 @@ const DEFAULT_ADULT_PARAM = '1';
 const DEFAULT_SORT_PARAM = 'favorite';
 const DEFAULT_BANNER_ID = '01';
 const API_RECORDS_PER_REQUEST = 100; // Duga APIが一度に返すレコード数
-const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
+const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
 const API_SOURCE_NAME = 'duga';     // このAPIのソース名
 
 // .env から Duga API の設定を取得
@@ -40,11 +40,11 @@ $dugaApiKey = $_ENV['DUGA_API_KEY'] ?? 'YOUR_DUGA_API_KEY_HERE'; // 実際のDug
 
 // .env からデータベース設定を取得
 $dbConfig = [
-    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
-    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
-    'user'    => $_ENV['DB_USER'] ?? 'root',
-    'pass'    => $_ENV['DB_PASS'] ?? 'password',
-    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+    'host'      => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'    => $_ENV['DB_NAME'] ?? 'web_project_db',
+    'user'      => $_ENV['DB_USER'] ?? 'root',
+    'pass'      => $_ENV['DB_PASS'] ?? 'password',
+    'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
 
@@ -80,7 +80,9 @@ try {
     if ($logger) { // ロガーが初期化されている場合のみ利用
         $logger->error("CLI初期設定中に致命的なエラーが発生しました: " . $e->getMessage()); // Dugaログに出力
     }
-    die("初期設定中にエラーが発生しました。ログを確認してください。\n");
+    // ここで致命的なエラーが発生した場合は、CLIスクリプト自体がウェブサーバーにエラーを返さないように
+    // 適切なメッセージを出力して終了する
+    die("エラー: CLIスクリプトの初期設定中に問題が発生しました。詳細はサーバログを確認してください。\n");
 }
 
 // -----------------------------------------------------
@@ -100,7 +102,7 @@ $sort       = $cli_options['sort'] ?? DEFAULT_SORT_PARAM;
 
 $logger->log("CLI Arguments processed: " . json_encode([
     'start_date' => $start_date,
-    'end_date' => $end_date,
+    'end_date' => $end_date, // ここは $end_date で正しいです
     'keyword' => $keyword,
     'genre_id' => $genre_id,
     'agentid' => $agentid,
@@ -144,7 +146,15 @@ try {
         }
 
         // 取得したAPIデータをraw_api_dataとproductsの両方のバッファに準備
-        foreach ($api_data_batch as $api_record) {
+        foreach ($api_data_batch as $api_record_wrapper) { // APIからの各レコードのラッパー
+            // ここで 'item' キーの下の実際のデータを取得
+            $api_record = $api_record_wrapper['item'] ?? null;
+
+            if (empty($api_record)) {
+                $logger->error("警告: 'item' キーが見つからないか空のためレコードをスキップします: " . json_encode($api_record_wrapper));
+                continue;
+            }
+
             $content_id = $api_record['productid'] ?? null; 
             
             if (empty($content_id)) {

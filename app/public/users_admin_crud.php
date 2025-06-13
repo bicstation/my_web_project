@@ -1,267 +1,310 @@
 <?php
-// C:\doc\my_web_project\app\public\users_admin_crud.php
-// tipers.live のメインコンテンツエリアに組み込むCRUD機能
+// C:\project\my_web_project\app\public\users_admin_crud.php
+// ユーザー管理画面のコンテンツ
 
-// セッションを開始 (必ずファイルの先頭付近に配置)
-session_start();
+// このファイルは index.php から include_once されることを想定しています。
+// そのため、Composerのオートローダーや.envのロード、セッションの開始は
+// 既に index.php または init.php で行われているはずです。
+// ここでは、必要なクラスのuse宣言と、このページ固有のロジックを記述します。
 
-// ログインチェック
-// ユーザーがログインしていない場合、ログインページにリダイレクト
-if (!isset($_SESSION['user_id'])) {
-    header("Location: /login.php"); // ログインページへのパス
-    exit();
-}
+use App\Core\Database;
+use App\Core\Logger;
+// use PDOException; // PDOExceptionはPHPのグローバルクラスであるため、このuseステートメントは不要です。
 
-// エラー報告を有効にする (開発用)
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// もし "Class 'App\Core\Logger' not found" エラーが続く場合、
+// 一時的に以下の行のコメントを解除してテストしてみてください。
+// 問題が解決する場合、Composerのオートロード設定または実行環境に問題がある可能性が高いです。
+require_once __DIR__ . '/../src/Core/Logger.php';
+require_once __DIR__ . '/../src/Core/Database.php';
 
-// 環境変数からデータベース接続情報を取得
-// .envファイルから設定されているDB_HOST, DB_NAME, DB_USER, DB_PASSWORDを使用
-$db_host = getenv('DB_HOST');
-$db_name = getenv('DB_NAME');
-$db_user = getenv('DB_USER');
-$db_password = getenv('DB_PASSWORD');
 
-// データベース接続
-$conn = new mysqli($db_host, $db_user, $db_password, $db_name);
+// データベース設定は init.php を経由して index.php でロードされているため、
+// $_ENV から直接利用可能です。
+$dbConfig = [
+    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
+    'user'    => $_ENV['DB_USER'] ?? 'root',
+    'pass'    => $_ENV['DB_PASS'] ?? 'password',
+    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+];
 
-// 接続エラーの確認
-if ($conn->connect_error) {
-    die("データベース接続エラー: " . $conn->connect_error);
-}
+$message = ''; // ユーザーへのメッセージ (成功/エラー)
+$users = [];   // データベースから取得したユーザーデータ
+$editUser = null; // 編集中のユーザーデータ
 
-$message = ""; // 成功・失敗メッセージを格納する変数
+try {
+    // ロガーのインスタンス化 (このページ専用のログファイル)
+    $logger = new Logger('users_admin_crud.log');
+    $logger->log("ユーザー管理画面 (users_admin_crud.php) へのアクセス処理を開始します。");
 
-// -----------------------------------------------------
-// データ追加 (Create) の処理
-// -----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
-    $username = $conn->real_escape_string($_POST['username']); // `name` を `username` に変更
-    $email = $conn->real_escape_string($_POST['email']);
+    // データベース接続の確立
+    $database = new Database($dbConfig, $logger);
+    $pdo = $database->getConnection(); // PDOインスタンスを取得
 
-    // 入力検証
-    if (empty($username) || empty($email)) { // `name` を `username` に変更
-        $message = "<div class='alert alert-warning'>ユーザー名とEメールは必須です。</div>";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = "<div class='alert alert-warning'>有効なEメールアドレスを入力してください。</div>";
-    } else {
-        // `name` を `username` に変更
-        // パスワードがこのCRUDでは扱われないため、password_hashカラムへの挿入はadd_admin_user.phpのみ
-        $stmt = $conn->prepare("INSERT INTO users (username, email) VALUES (?, ?)");
-        $stmt->bind_param("ss", $username, $email); // `name` を `username` に変更
+    // -----------------------------------------------------
+    // POSTリクエストの処理 (新規作成/更新/削除)
+    // -----------------------------------------------------
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = $_POST['action'] ?? '';
 
-        if ($stmt->execute()) {
-            $message = "<div class='alert alert-success'>新しいユーザーが追加されました。</div>";
-        } else {
-            if ($conn->errno == 1062) { // 1062はDuplicate entryのエラーコード
-                $message = "<div class='alert alert-danger'>このEメールは既に登録されています。</div>";
+        if ($action === 'add_user') {
+            // ユーザー追加処理
+            $username = trim($_POST['username'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $role = $_POST['role'] ?? 'user'; // デフォルトは 'user'
+
+            if (empty($username) || empty($email) || empty($password)) {
+                $message = "<div class='alert alert-danger'>ユーザー名、メールアドレス、パスワードは必須です。</div>";
+                $logger->error("ユーザー追加失敗: 必須フィールドが空です。");
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $message = "<div class='alert alert-danger'>有効なメールアドレスを入力してください。</div>";
+                $logger->error("ユーザー追加失敗: 無効なメールアドレス '{$email}'。");
             } else {
-                $message = "<div class='alert alert-danger'>ユーザーの追加に失敗しました: " . $stmt->error . "</div>";
-            }
-        }
-        $stmt->close();
-    }
-}
-
-// -----------------------------------------------------
-// データ更新 (Update) の処理
-// -----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_user') {
-    $id = (int)$_POST['id'];
-    $username = $conn->real_escape_string($_POST['username']); // `name` を `username` に変更
-    $email = $conn->real_escape_string($_POST['email']);
-
-    if (empty($id) || empty($username) || empty($email)) { // `name` を `username` に変更
-        $message = "<div class='alert alert-warning'>ID、ユーザー名、Eメールは必須です。</div>";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = "<div class='alert alert-warning'>有効なEメールアドレスを入力してください。</div>";
-    } else {
-        // `name` を `username` に変更
-        $stmt = $conn->prepare("UPDATE users SET username = ?, email = ? WHERE id = ?");
-        $stmt->bind_param("ssi", $username, $email, $id); // `name` を `username` に変更
-
-        if ($stmt->execute()) {
-            $message = "<div class='alert alert-success'>ユーザー情報が更新されました。</div>";
-        } else {
-            if ($conn->errno == 1062) {
-                $message = "<div class='alert alert-danger'>このEメールは既に登録されています。</div>";
-            } else {
-                $message = "<div class='alert alert-danger'>ユーザーの更新に失敗しました: " . $stmt->error . "</div>";
-            }
-        }
-        $stmt->close();
-    }
-}
-
-// -----------------------------------------------------
-// データ削除 (Delete) の処理
-// -----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_user') {
-    $id = (int)$_POST['id'];
-
-    if (empty($id)) {
-        $message = "<div class='alert alert-warning'>削除するユーザーのIDが指定されていません。</div>";
-    } else {
-        $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-        $stmt->bind_param("i", $id); // i: integer
-
-        if ($stmt->execute()) {
-            $message = "<div class='alert alert-success'>ユーザーが削除されました。</div>";
-        } else {
-            $message = "<div class='alert alert-danger'>ユーザーの削除に失敗しました: " . $stmt->error . "</div>";
-        }
-        $stmt->close();
-    }
-}
-?>
-
-<div class="container-fluid bg-white p-4 rounded shadow-sm mt-3">
-    <h1>ユーザー管理</h1>
-
-    <?php
-    // メッセージ表示エリア
-    if (!empty($message)) {
-        echo $message;
-    }
-
-    // -----------------------------------------------------
-    // データ表示 (Read) の処理
-    // -----------------------------------------------------
-    // `name` を `username` に変更
-    $sql = "SELECT id, username, email, created_at FROM users ORDER BY id DESC"; // 新しいデータが上に来るように
-    $result = $conn->query($sql);
-
-    if ($result) {
-        if ($result->num_rows > 0) {
-            echo "<table class='table table-bordered table-striped'>";
-            echo "<thead><tr><th>ID</th><th>ユーザー名</th><th>Eメール</th><th>作成日時</th><th>操作</th></tr></thead>";
-            echo "<tbody>";
-            while($row = $result->fetch_assoc()) {
-                echo "<tr>";
-                echo "<td>" . htmlspecialchars($row["id"]). "</td>";
-                echo "<td>" . htmlspecialchars($row["username"]). "</td>"; // `name` を `username` に変更
-                echo "<td>" . htmlspecialchars($row["email"]). "</td>"; // XSS対策
-                echo "<td>" . htmlspecialchars($row["created_at"]). "</td>";
-                echo "<td>";
-                // `data-name` を `data-username` に変更
-                echo "<button class='btn btn-sm btn-info me-2 edit-btn' data-id='" . htmlspecialchars($row['id']) . "' data-username='" . htmlspecialchars($row['username']) . "' data-email='" . htmlspecialchars($row['email']) . "'>編集</button>";
-
-                echo "<form method='POST' action='' class='d-inline-block' onsubmit='return confirm(\"本当に削除しますか？\");'>";
-                echo "    <input type='hidden' name='action' value='delete_user'>";
-                echo "    <input type='hidden' name='id' value='" . htmlspecialchars($row['id']) . "'>";
-                echo "    <button type='submit' class='btn btn-sm btn-danger'>削除</button>";
-                echo "</form>";
-                echo "</td>";
-                echo "</tr>";
-            }
-            echo "</tbody></table>";
-        } else {
-            echo "<p class='alert alert-info'>データが見つかりませんでした。</p>";
-        }
-    } else {
-        echo "<p class='alert alert-danger'>テーブルからデータを取得できませんでした: " . $conn->error . "</p>";
-    }
-
-    // -----------------------------------------------------
-    // データ追加フォーム (Create Form)
-    // -----------------------------------------------------
-    ?>
-    <div class='form-section'>
-        <h2>新しいユーザーを追加</h2>
-        <form method='POST' action=''>
-            <input type='hidden' name='action' value='add_user'>
-            <div class='mb-3'>
-                <label for='add_username' class='form-label'>ユーザー名</label> <!-- `add_name` を `add_username` に変更 -->
-                <input type='text' class='form-control' id='add_username' name='username' required> <!-- `id='add_name'`, `name='name'` を変更 -->
-            </div>
-            <div class='mb-3'>
-                <label for='add_email' class='form-label'>Eメール</label>
-                <input type='email' class='form-control' id='add_email' name='email' required>
-            </div>
-            <button type='submit' class='btn btn-primary'>追加</button>
-        </form>
-    </div>
-
-    <?php
-    // -----------------------------------------------------
-    // データ更新フォーム (Update Form) - デフォルトでは非表示
-    // -----------------------------------------------------
-    ?>
-    <div class='form-section' id='edit-form-section' style='display: none;'>
-        <h2>ユーザー情報を編集</h2>
-        <form method='POST' action=''>
-            <input type='hidden' name='action' value='update_user'>
-            <input type='hidden' name='id' id='edit_id'>
-            <div class='mb-3'>
-                <label for='edit_username' class='form-label'>ユーザー名</label> <!-- `edit_name` を `edit_username` に変更 -->
-                <input type='text' class='form-control' id='edit_username' name='username' required> <!-- `id='edit_name'`, `name='name'` を変更 -->
-            </div>
-            <div class='mb-3'>
-                <label for='edit_email' class='form-label'>Eメール</label>
-                <input type='email' class='form-control' id='edit_email' name='email' required>
-            </div>
-            <button type='submit' class='btn btn-success'>更新</button>
-            <button type='button' class='btn btn-secondary ms-2' id='cancel-edit'>キャンセル</button>
-        </form>
-    </div>
-</div><!-- .container-fluid -->
-
-<?php
-// 接続を閉じる
-$conn->close();
-?>
-
-<!-- JavaScript for Edit button to populate form -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const editButtons = document.querySelectorAll('.edit-btn');
-    const editFormSection = document.getElementById('edit-form-section');
-    const editIdInput = document.getElementById('edit_id');
-    const editUsernameInput = document.getElementById('edit_username'); // `editNameInput` を `editUsernameInput` に変更
-    const editEmailInput = document.getElementById('edit_email');
-    const cancelEditButton = document.getElementById('cancel-edit');
-
-    console.log('CRUD script loaded in tipers.live template.');
-    console.log('editFormSection:', editFormSection);
-    console.log('editIdInput:', editIdInput);
-    console.log('cancelEditButton:', cancelEditButton);
-
-    if (cancelEditButton) {
-        cancelEditButton.addEventListener('click', function() {
-            console.log('キャンセルボタンがクリックされました！');
-            if (editFormSection) {
-                editFormSection.style.display = 'none';
-            }
-            editIdInput.value = '';
-            editUsernameInput.value = ''; // `editNameInput` を `editUsernameInput` に変更
-            editEmailInput.value = '';
-        });
-    } else {
-        console.error("エラー: 'cancel-edit' IDを持つキャンセルボタンが見つかりません。");
-    }
-
-    editButtons.forEach(button => {
-        if (button) { // defensive check, though forEach implies existence if in list
-            button.addEventListener('click', function() {
-                console.log('編集ボタンがクリックされました！');
-                const id = this.dataset.id;
-                const username = this.dataset.username; // `name` を `username` に変更
-                const email = this.dataset.email;
-
-                editIdInput.value = id;
-                editUsernameInput.value = username; // `editNameInput` を `editUsernameInput` に変更
-                editEmailInput.value = email;
-                if (editFormSection) {
-                    editFormSection.style.display = 'block';
-                    window.scrollTo({ top: editFormSection.offsetTop, behavior: 'smooth' });
+                // ユーザー名またはメールアドレスが既に存在するかチェック
+                $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = :username OR email = :email");
+                $stmt_check->execute([':username' => $username, ':email' => $email]);
+                if ($stmt_check->fetchColumn() > 0) {
+                    $message = "<div class='alert alert-danger'>そのユーザー名またはメールアドレスは既に使用されています。</div>";
+                    $logger->warning("ユーザー追加失敗: 重複するユーザー名/メールアドレス ('{$username}' / '{$email}')。");
                 } else {
-                    console.error("エラー: 'edit-form-section' IDを持つ編集フォームセクションが見つかりません。");
+                    $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                    $stmt_insert = $pdo->prepare("INSERT INTO users (username, email, password_hash, role) VALUES (:username, :email, :password_hash, :role)");
+                    
+                    if ($stmt_insert->execute([
+                        ':username' => $username,
+                        ':email' => $email,
+                        ':password_hash' => $hashed_password,
+                        ':role' => $role
+                    ])) {
+                        $message = "<div class='alert alert-success'>ユーザー「" . htmlspecialchars($username) . "」が正常に追加されました。</div>";
+                        $logger->log("ユーザー「{$username}」が正常に追加されました。");
+                    } else {
+                        $errorInfo = $stmt_insert->errorInfo();
+                        $message = "<div class='alert alert-danger'>ユーザーの追加に失敗しました: " . htmlspecialchars($errorInfo[2]) . "</div>";
+                        $logger->error("ユーザー追加失敗: " . $errorInfo[2]);
+                    }
                 }
-                console.log('編集フォーム表示を試みました。');
-            });
+            }
+        } elseif ($action === 'edit_user') {
+            // ユーザー編集処理
+            $user_id = (int)($_POST['user_id'] ?? 0);
+            $username = trim($_POST['username'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? ''; // パスワードは任意
+            $role = $_POST['role'] ?? 'user';
+
+            if ($user_id <= 0 || empty($username) || empty($email)) {
+                $message = "<div class='alert alert-danger'>ユーザーID、ユーザー名、メールアドレスは必須です。</div>";
+                $logger->error("ユーザー編集失敗: 必須フィールドが空、または無効なユーザーID '{$user_id}'。");
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $message = "<div class='alert alert-danger'>有効なメールアドレスを入力してください。</div>";
+                $logger->error("ユーザー編集失敗: 無効なメールアドレス '{$email}'。");
+            } else {
+                // 他のユーザーが同じユーザー名またはメールアドレスを使用していないかチェック (自分自身を除く)
+                $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM users WHERE (username = :username OR email = :email) AND id != :user_id");
+                $stmt_check->execute([':username' => $username, ':email' => $email, ':user_id' => $user_id]);
+                if ($stmt_check->fetchColumn() > 0) {
+                    $message = "<div class='alert alert-danger'>そのユーザー名またはメールアドレスは既に他のユーザーに使用されています。</div>";
+                    $logger->warning("ユーザー編集失敗: 重複するユーザー名/メールアドレス (ID: {$user_id}, ユーザー名: '{$username}', メールアドレス: '{$email}')。");
+                } else {
+                    $sql = "UPDATE users SET username = :username, email = :email, role = :role, updated_at = NOW()";
+                    $params = [
+                        ':username' => $username,
+                        ':email' => $email,
+                        ':role' => $role,
+                        ':user_id' => $user_id
+                    ];
+
+                    if (!empty($password)) {
+                        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                        $sql .= ", password_hash = :password_hash";
+                        $params[':password_hash'] = $hashed_password;
+                    }
+                    $sql .= " WHERE id = :user_id";
+
+                    $stmt_update = $pdo->prepare($sql);
+                    if ($stmt_update->execute($params)) {
+                        $message = "<div class='alert alert-success'>ユーザー「" . htmlspecialchars($username) . "」が正常に更新されました。</div>";
+                        $logger->log("ユーザー「{$username}」が正常に更新されました (ID: {$user_id})。");
+                    } else {
+                        $errorInfo = $stmt_update->errorInfo();
+                        $message = "<div class='alert alert-danger'>ユーザーの更新に失敗しました: " . htmlspecialchars($errorInfo[2]) . "</div>";
+                        $logger->error("ユーザー更新失敗 (ID: {$user_id}): " . $errorInfo[2]);
+                    }
+                }
+            }
+        } elseif ($action === 'delete_user') {
+            // ユーザー削除処理
+            $user_id = (int)($_POST['user_id'] ?? 0);
+
+            if ($user_id <= 0) {
+                $message = "<div class='alert alert-danger'>無効なユーザーIDです。</div>";
+                $logger->error("ユーザー削除失敗: 無効なユーザーID '{$user_id}'。");
+            } else {
+                $stmt_delete = $pdo->prepare("DELETE FROM users WHERE id = :user_id");
+                if ($stmt_delete->execute([':user_id' => $user_id])) {
+                    $message = "<div class='alert alert-success'>ユーザー (ID: " . htmlspecialchars($user_id) . ") が正常に削除されました。</div>";
+                    $logger->log("ユーザー (ID: {$user_id}) が正常に削除されました。");
+                } else {
+                    $errorInfo = $stmt_delete->errorInfo();
+                    $message = "<div class='alert alert-danger'>ユーザーの削除に失敗しました: " . htmlspecialchars($errorInfo[2]) . "</div>";
+                    $logger->error("ユーザー削除失敗 (ID: {$user_id}): " . $errorInfo[2]);
+                }
+            }
         }
-    });
-});
-</script>
+        // POST処理後、GETリクエストにリダイレクトしてフォームの二重送信を防ぐ
+        header("Location: " . $_SERVER['PHP_SELF'] . "?page=users_admin");
+        exit();
+    }
+
+    // -----------------------------------------------------
+    // GETリクエストの処理 (ユーザー一覧の表示、編集フォームのデータロード)
+    // -----------------------------------------------------
+    // ユーザー一覧の取得
+    $stmt_users = $pdo->query("SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at DESC");
+    $users = $stmt_users->fetchAll(PDO::FETCH_ASSOC);
+    $logger->log(count($users) . " 件のユーザーデータを取得しました。");
+
+    // 編集モードの場合、指定されたユーザーIDのデータをロード
+    if (isset($_GET['edit_id']) && (int)$_GET['edit_id'] > 0) {
+        $edit_id = (int)$_GET['edit_id'];
+        $stmt_edit = $pdo->prepare("SELECT id, username, email, role FROM users WHERE id = :id");
+        $stmt_edit->execute([':id' => $edit_id]);
+        $editUser = $stmt_edit->fetch(PDO::FETCH_ASSOC);
+        if ($editUser) {
+            $logger->log("ユーザーID {$edit_id} の編集データをロードしました。");
+        } else {
+            $message = "<div class='alert alert-warning'>指定されたユーザーが見つかりませんでした。</div>";
+            $logger->warning("編集対象ユーザーID {$edit_id} が見つかりませんでした。");
+        }
+    }
+
+} catch (PDOException $e) {
+    // データベース関連のエラーをキャッチ
+    $message = "<div class='alert alert-danger'>データベースエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
+    error_log("Users Admin CRUD DB error: " . $e->getMessage());
+    if (isset($logger)) {
+        $logger->error("Users Admin CRUD DB error: " . $e->getMessage());
+    }
+} catch (Exception $e) {
+    // その他のアプリケーションエラーをキャッチ
+    $message = "<div class='alert alert-danger'>アプリケーションエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
+    error_log("Users Admin CRUD application error: " . $e->getMessage());
+    if (isset($logger)) {
+        $logger->error("Users Admin CRUD application error: " . $e->getMessage());
+    }
+}
+
+// ここからはHTML出力部分
+?>
+
+<div class="container-fluid bg-white p-4 rounded shadow-sm">
+    <h1 class="mb-4"><i class="fas fa-users-cog me-2"></i>ユーザー管理</h1>
+
+    <?php if (!empty($message)): ?>
+        <?= $message ?>
+    <?php endif; ?>
+
+    <!-- 新規ユーザー追加/編集フォーム -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <?php if ($editUser): ?>
+                    <i class="fas fa-edit me-2"></i>ユーザー編集 (ID: <?= htmlspecialchars($editUser['id']) ?>)
+                <?php else: ?>
+                    <i class="fas fa-user-plus me-2"></i>新規ユーザー追加
+                <?php endif; ?>
+            </h5>
+        </div>
+        <div class="card-body">
+            <form action="" method="POST">
+                <input type="hidden" name="action" value="<?= $editUser ? 'edit_user' : 'add_user' ?>">
+                <?php if ($editUser): ?>
+                    <input type="hidden" name="user_id" value="<?= htmlspecialchars($editUser['id']) ?>">
+                <?php endif; ?>
+
+                <div class="mb-3">
+                    <label for="username" class="form-label">ユーザー名</label>
+                    <input type="text" class="form-control" id="username" name="username" value="<?= htmlspecialchars($editUser['username'] ?? '') ?>" required>
+                </div>
+                <div class="mb-3">
+                    <label for="email" class="form-label">メールアドレス</label>
+                    <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($editUser['email'] ?? '') ?>" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">パスワード (<?= $editUser ? '変更する場合のみ入力' : '必須' ?>)</label>
+                    <input type="password" class="form-control" id="password" name="password" <?= $editUser ? '' : 'required' ?>>
+                    <?php if ($editUser): ?>
+                        <small class="form-text text-muted">パスワードは変更する場合のみ入力してください。空の場合は変更されません。</small>
+                    <?php endif; ?>
+                </div>
+                <div class="mb-3">
+                    <label for="role" class="form-label">役割</label>
+                    <select class="form-select" id="role" name="role" required>
+                        <option value="user" <?= (($editUser['role'] ?? '') === 'user') ? 'selected' : '' ?>>ユーザー</option>
+                        <option value="admin" <?= (($editUser['role'] ?? '') === 'admin') ? 'selected' : '' ?>>管理者</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <?php if ($editUser): ?>
+                        <i class="fas fa-sync-alt me-2"></i>ユーザー更新
+                    <?php else: ?>
+                        <i class="fas fa-user-plus me-2"></i>ユーザー追加
+                    <?php endif; ?>
+                </button>
+                <?php if ($editUser): ?>
+                    <a href="<?= $_SERVER['PHP_SELF'] ?>?page=users_admin" class="btn btn-secondary ms-2"><i class="fas fa-times me-2"></i>キャンセル</a>
+                <?php endif; ?>
+            </form>
+        </div>
+    </div>
+
+    <!-- ユーザー一覧 -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-users me-2"></i>登録済みユーザー一覧</h5>
+        </div>
+        <div class="card-body">
+            <?php if (!empty($users)): ?>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>ユーザー名</th>
+                                <th>メールアドレス</th>
+                                <th>役割</th>
+                                <th>登録日</th>
+                                <th>更新日</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($users as $user): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($user['id']) ?></td>
+                                    <td><?= htmlspecialchars($user['username']) ?></td>
+                                    <td><?= htmlspecialchars($user['email']) ?></td>
+                                    <td><?= htmlspecialchars($user['role']) ?></td>
+                                    <td><?= htmlspecialchars($user['created_at']) ?></td>
+                                    <td><?= htmlspecialchars($user['updated_at']) ?></td>
+                                    <td>
+                                        <a href="<?= $_SERVER['PHP_SELF'] ?>?page=users_admin&edit_id=<?= htmlspecialchars($user['id']) ?>" class="btn btn-sm btn-info me-1"><i class="fas fa-edit"></i> 編集</a>
+                                        <form action="" method="POST" class="d-inline" onsubmit="return confirm('本当にこのユーザーを削除しますか？');">
+                                            <input type="hidden" name="action" value="delete_user">
+                                            <input type="hidden" name="user_id" value="<?= htmlspecialchars($user['id']) ?>">
+                                            <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash-alt"></i> 削除</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <p class="alert alert-info">現在、登録されているユーザーはいません。</p>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>

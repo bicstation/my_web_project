@@ -1,11 +1,69 @@
 <?php
-// C:\doc\my_web_project\app\public\index.php
+// C:\project\my_web_project\app\public\index.php
+
+// Composerのオートローダーを読み込む
+// これにより、App名前空間下のクラスや、vlucas/phpdotenvなどのComposerが管理するライブラリが自動的にロードされます。
+require_once __DIR__ . '/../../vendor/autoload.php';
+
+// Dotenvライブラリを使って.envファイルをロード (オートローダーの後に配置)
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv->load();
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
+// init.php がセッションを開始する前に、ここまでの出力がないことを確認することが重要。
 require_once __DIR__ . '/init.php';
 
-// URLのクエリパラメータ 'page' を取得
-$currentPage = isset($_GET['page']) ? $_GET['page'] : 'home';
+// 名前空間を使用するクラスをインポート
+use App\Core\Logger;
+use App\Core\Database;
+// use PDOException; // PDOException はグローバルクラスなので不要です
+
+// データベース接続設定を.envから取得
+$dbConfig = [
+    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
+    'user'    => $_ENV['DB_USER'] ?? 'root',
+    'pass'    => $_ENV['DB_PASS'] ?? 'password',
+    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+];
+
+// ロガーとデータベース接続をグローバルで利用可能にする（sidebar.phpなどからアクセスするため）
+global $logger, $database, $pdo;
+try {
+    $logger = new Logger('main_app.log'); // <-- Loggerクラスがロードされる
+    $logger->log("メインアプリケーション (index.php) へのアクセス処理を開始します。");
+    $database = new Database($dbConfig, $logger);
+    $pdo = $database->getConnection();
+} catch (Exception $e) {
+    // データベース接続エラーなどの初期化エラー
+    error_log("Main application initialization error: " . $e->getMessage());
+    die("サイトの初期化中にエラーが発生しました。ログを確認してください。"); // ユーザーに表示
+}
+
+
+// URLのクエリパラメータ 'page' を取得、またはホスト名に基づいてページを決定
+$currentPage = $_GET['page'] ?? 'home';
+$isDugaDomain = ($_SERVER['HTTP_HOST'] === 'duga.tipers.live');
+
+// Dugaドメインからのアクセスであれば、ページをDuga関連ページに限定する
+if ($isDugaDomain) {
+    if (isset($_GET['page'])) {
+        if ($_GET['page'] === 'duga_product_detail') {
+            $currentPage = 'duga_product_detail';
+        } else {
+            // dugaドメインでpageパラメータがあるが、duga_product_detailではない場合、
+            // デフォルトのduga_products_pageにフォールバック
+            $currentPage = 'duga_products_page';
+        }
+    } else {
+        // dugaドメインでpageパラメータがない場合
+        $currentPage = 'duga_products_page';
+    }
+}
+
+// ★追加: $currentPage の値をログに出力して確認
+error_log("DEBUG: index.php - \$currentPage before switch: " . $currentPage);
+
 
 // Debugging line: 現在のページとセッションのユーザーIDをPHPエラーログに出力
 error_log("Current page requested: " . $currentPage . ", User ID in session: " . ($_SESSION['user_id'] ?? 'NOT SET'));
@@ -29,7 +87,11 @@ $pageTitle = "Tiper Live";
 if ($currentPage === 'users_admin') {
     $pageTitle = "Tiper Live - ユーザー管理";
 } elseif ($currentPage === 'products_admin') {
-    $pageTitle = "Tiper Live - 商品登録"; // 新しく追加
+    $pageTitle = "Tiper Live - 商品登録";
+} elseif ($currentPage === 'duga_products_page') {
+    $pageTitle = "Duga 商品一覧 - Tiper Live"; // Dugaページ用のタイトル
+} elseif ($currentPage === 'duga_product_detail') { // ★追加: 個別ページ用のタイトル
+    $pageTitle = "Duga 商品詳細 - Tiper Live";
 }
 // 必要に応じて、他のページのタイトルもここで設定可能
 
@@ -57,9 +119,15 @@ if ($currentPage === 'users_admin') {
                     // ユーザー管理ページの場合
                     include_once __DIR__ . '/users_admin_crud.php';
                     break;
-                case 'products_admin': // 新しく追加
+                case 'products_admin':
                     // 商品登録ページの場合
                     include_once __DIR__ . '/products_admin.php';
+                    break;
+                case 'duga_products_page': // Duga専用ページの場合
+                    include_once __DIR__ . '/duga_products.php';
+                    break;
+                case 'duga_product_detail': // ★追加: Duga商品個別ページの場合
+                    include_once __DIR__ . '/duga_product_detail.php';
                     break;
                 case 'home':
                 default:
