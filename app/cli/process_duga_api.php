@@ -35,7 +35,7 @@ const API_SOURCE_NAME = 'duga';     // このAPIのソース名
 
 // .env から Duga API の設定を取得
 // 環境変数がない場合のデフォルト値を設定することも可能
-$dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'https://api.duga.jp/v1/'; // 実際のDuga APIのURLを設定
+$dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search'; // 実際のDuga APIのURLを設定
 $dugaApiKey = $_ENV['DUGA_API_KEY'] ?? 'YOUR_DUGA_API_KEY_HERE'; // 実際のDuga APIキーを設定
 
 // .env からデータベース設定を取得
