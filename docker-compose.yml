@@ -1,14 +1,14 @@
-version: '3.8'
-
 services:
   nginx:
     build: ./nginx
     container_name: nginx_container
     ports:
       - "80:80"
+      - "443:443" # HTTPSポートも公開
     volumes:
       - .:/var/www/html # プロジェクトルート全体をコンテナの /var/www/html にマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
+      - /etc/letsencrypt:/etc/letsencrypt:ro # ★追加: Certbot証明書を読み取り専用でマウント
     depends_on:
       - php
       - mysql
