@@ -52,7 +52,7 @@ try {
 
     // 環境変数からデータベースパスワードを取得し、デフォルトパスワードを設定
     $admin_username = "admin";
-    $admin_email = "admin@tipers.live";
+    $admin_email = "admin@tiper.live";
     // .env の DB_PASSWORD を管理者パスワードとして使用
     $admin_password = $_ENV['DB_PASSWORD'] ?? 'password'; // デフォルトパスワードを設定
 
