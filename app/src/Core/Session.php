@@ -96,7 +96,9 @@ class Session
     // CSRFトークンを検証する
     public static function verifyCsrfToken($token)
     {
-        $sessionToken = self::get('csrf_token');
+        // セッションからトークンを取得。もし存在しなければ空文字列にフォールバック
+        $sessionToken = self::get('csrf_token') ?? ''; // ここを修正
+
         // hash_equals はタイミング攻撃を防ぐ安全な比較関数
         if ($token && hash_equals($sessionToken, $token)) {
             // セキュリティ向上のため、使用済みトークンはすぐに無効化し新しいものを生成

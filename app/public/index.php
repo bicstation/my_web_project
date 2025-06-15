@@ -1,7 +1,7 @@
 <?php
 // C:\project\my_web_project\app\public\index.php
 
-// Composerのオートローダーを読み込む
+// Composerのオートローダーを読み込む - これは常にファイルの早い段階で必要です
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 // Dotenvライブラリを使って.envファイルをロード
@@ -9,12 +9,14 @@ $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
 $dotenv->load();
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
+// ここではinit.php自体にクラス定義は含まれていないことを前提とします
 require_once __DIR__ . '/../init.php';
 
 // 名前空間を使用するクラスをインポート
+// Composerのオートロード設定により、これらのクラスが自動的に読み込まれます
 use App\Core\Logger;
 use App\Core\Database;
-use App\Core\Session;
+use App\Core\Session; // App\Core\Session クラスをインポート
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -28,14 +30,36 @@ $dbConfig = [
 // ロガーとデータベース接続をグローバルで利用可能にする
 global $logger, $database, $pdo;
 try {
-    $logger = new Logger('main_app.log');
+    $logger = new Logger('main_app.log'); // Loggerクラスのインスタンス化
     $logger->info("メインアプリケーション (index.php) へのアクセス処理を開始します。");
-    $database = new Database($dbConfig, $logger);
+    $database = new Database($dbConfig, $logger); // Databaseクラスのインスタンス化
     $pdo = $database->getConnection();
 } catch (Exception $e) {
     error_log("Main application initialization error: " . $e->getMessage());
     die("サイトの初期化中にエラーが発生しました。ログを確認してください。");
 }
+
+// ====================================================================
+// !!! 重要: CSRFトークンをここで生成/確認します。
+// これにより、後続のPOSTリクエスト検証時に必ずトークンが存在します。
+// ====================================================================
+if (!Session::has('csrf_token')) {
+    Session::generateCsrfToken();
+}
+// ユーザーの活動時間を更新し、一定期間操作がない場合は自動的にログアウトさせる
+if (Session::isLoggedIn()) {
+    $lastActivity = Session::get('last_activity');
+    $inactiveTime = 1800; // 30分
+
+    if (time() - $lastActivity > $inactiveTime) {
+        Session::logout();
+        Session::set('flash_message', "<div class='alert alert-warning'>セッションがタイムアウトしました。再度ログインしてください。</div>");
+        header('Location: index.php?page=login');
+        exit();
+    }
+    Session::set('last_activity', time()); // アクティビティを更新
+}
+
 
 // URLのクエリパラメータ 'page' を取得、またはホスト名に基づいてページを決定
 $currentPage = $_GET['page'] ?? 'home';
@@ -174,12 +198,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $protected_pages = ['users_admin', 'products_admin', 'dashboard', 'profile'];
 
 if (in_array($currentPage, $protected_pages)) {
+    // Session::isLoggedIn() が Session クラスを介して呼び出される
     if (!Session::isLoggedIn()) {
         Session::set('flash_message', "<div class='alert alert-warning'>このページにアクセスするにはログインが必要です。</div>");
         header("Location: index.php?page=login");
         exit();
     }
 
+    // Session::getUserRole() が Session クラスを介して呼び出される
     if (($currentPage === 'users_admin' || $currentPage === 'products_admin') && Session::getUserRole() !== 'admin') {
         Session::set('flash_message', "<div class='alert alert-danger'>このページにアクセスする権限がありません。</div>");
         header('Location: index.php?page=home');
