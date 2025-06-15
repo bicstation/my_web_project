@@ -1,16 +1,16 @@
 {
     "name": "tiper-vendor/tiper-project",
-    "description": "A Toper web project to process Duga API data.",
+    "description": "A Tiper web project to process Duga API data.",
     "type": "project",
     "license": "MIT",
     "authors": [
         {
-            "name": "Your Name",
-            "email": "your.email@example.com"
+            "name": "Masakatsu Watanabe",
+            "email": "bicstation@gmail.com"
         }
     ],
     "require": {
-        "php": ">=7.4",
+        "php": ">=8.2",
         "vlucas/phpdotenv": "^5.0", 
         "phpmailer/phpmailer": "^6.9" 
     },
