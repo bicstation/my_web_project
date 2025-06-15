@@ -1,25 +1,34 @@
 <?php
 // C:\project\my_web_project\app\public\index.php
-// public/index.php の先頭あたりに追記 (一時的)
-ini_set('display_errors', 'On');
+
+// エラーレポート設定 (開発中はこれらを有効にするのがベスト)
+ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 // Composerのオートローダーを読み込む - これは常にファイルの早い段階で必要です
 require_once __DIR__ . '/../../vendor/autoload.php';
-
-// Dotenvライブラリを使って.envファイルをロード
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
-$dotenv->load();
-
-// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
-// ここではinit.php自体にクラス定義は含まれていないことを前提とします
-require_once __DIR__ . '/../init.php';
 
 // 名前空間を使用するクラスをインポート
 // Composerのオートロード設定により、これらのクラスが自動的に読み込まれます
 use App\Core\Logger;
 use App\Core\Database;
 use App\Core\Session; // App\Core\Session クラスをインポート
+
+// === init.php から移動したセッション初期化ロジック ===
+if (session_status() == PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => 3600, // 1時間
+        'path' => '/',
+        'domain' => '', // 必要に応じてドメインを指定 (例: '.yourdomain.com')
+        'secure' => true, // HTTPSでのみクッキーを送信
+        'httponly' => true, // JavaScriptからのアクセスを禁止
+        'samesite' => 'Lax' // CSRF対策
+    ]);
+    session_name('MYAPPSESSID'); // セッションクッキー名を指定
+    session_start();
+}
+// === セッション初期化ロジックここまで ===
+
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -481,3 +490,4 @@ if ($currentPage === 'users_admin') {
 </body>
 
 </html>
+
