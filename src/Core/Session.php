@@ -1,15 +1,12 @@
 <?php
+// C:\project\my_web_project\app\src\Core\Session.php
 
 namespace App\Core;
 
-/**
- * Session クラス
- * セッションの開始、設定、データの操作、ログイン/ログアウト管理を行います。
- */
 class Session
 {
     /**
-     * セッションを開始します。
+     * セッションを開始または再開します。
      * 既にセッションが開始されている場合は何もしません。
      */
     public static function start(): void
@@ -20,43 +17,46 @@ class Session
     }
 
     /**
-     * セッションにデータをセットします。
+     * 指定されたキーでセッションに値を設定します。
      *
      * @param string $key キー
      * @param mixed $value 値
      */
-    public static function set(string $key, mixed $value): void
+    public static function set(string $key, $value): void
     {
         $_SESSION[$key] = $value;
     }
 
     /**
-     * セッションからデータを取得します。
+     * 指定されたキーからセッションの値を取得します。
+     * キーが存在しない場合は、オプションでデフォルト値を返します。
      *
      * @param string $key キー
-     * @param mixed $default デフォルト値 (キーが存在しない場合)
-     * @return mixed セッションの値、またはデフォルト値
+     * @param mixed $default デフォルト値 (オプション)
+     * @return mixed セッションの値またはデフォルト値
      */
-    public static function get(string $key, mixed $default = null): mixed
+    public static function get(string $key, $default = null)
     {
         return $_SESSION[$key] ?? $default;
     }
 
     /**
-     * セッションからデータを削除します。
+     * 指定されたキーのセッション値を削除します。
      *
      * @param string $key キー
      */
     public static function remove(string $key): void
     {
-        unset($_SESSION[$key]);
+        if (isset($_SESSION[$key])) {
+            unset($_SESSION[$key]);
+        }
     }
 
     /**
-     * 指定されたキーのセッションデータが存在するかチェックします。
+     * セッションに指定されたキーが存在するかどうかを確認します。
      *
      * @param string $key キー
-     * @return bool 存在すれば true、そうでなければ false
+     * @return bool キーが存在すれば true、そうでなければ false
      */
     public static function has(string $key): bool
     {
@@ -64,75 +64,13 @@ class Session
     }
 
     /**
-     * 現在のセッションIDを再生成し、古いセッションファイルを削除します。
-     * セキュリティ向上のため、ログイン時などに呼び出すことを推奨します。
-     *
-     * @param bool $delete_old_session 古いセッションファイルを削除するかどうか (デフォルト: true)
+     * 現在のセッションを破棄し、すべてのセッションデータをクリアします。
      */
-    public static function regenerateId(bool $delete_old_session = true): void
+    public static function destroy(): void
     {
-        session_regenerate_id($delete_old_session);
-    }
-
-    /**
-     * ユーザーをログイン状態にします。
-     * ユーザーIDやロールなどの情報をセッションに保存し、セッションIDを再生成します。
-     *
-     * @param int $userId ユーザーID
-     * @param string $username ユーザー名
-     * @param string $role ユーザーの役割 (例: 'user', 'admin')
-     */
-    public static function login(int $userId, string $username, string $role): void
-    {
-        self::start(); // セッションが開始されていない場合は開始
-        self::regenerateId(); // セッション固定攻撃対策
-
-        self::set('user_id', $userId);
-        self::set('username', $username);
-        self::set('role', $role);
-        self::set('logged_in', true);
-        self::set('last_activity', time()); // 最終活動時刻
-    }
-
-    /**
-     * ユーザーがログインしているかチェックします。
-     *
-     * @return bool ログインしていれば true、そうでなければ false
-     */
-    public static function isLoggedIn(): bool
-    {
-        self::start(); // セッションが開始されていない場合は開始
-        return self::has('logged_in') && self::get('logged_in') === true;
-    }
-
-    /**
-     * ログインしているユーザーのIDを取得します。
-     *
-     * @return int|null ユーザーID、またはログインしていなければ null
-     */
-    public static function getUserId(): ?int
-    {
-        return self::get('user_id');
-    }
-
-    /**
-     * ログインしているユーザーの役割を取得します。
-     *
-     * @return string|null ユーザーの役割、またはログインしていなければ null
-     */
-    public static function getUserRole(): ?string
-    {
-        return self::get('role');
-    }
-
-    /**
-     * ユーザーをログアウトさせます。
-     * セッションデータをすべてクリアし、セッションを破棄します。
-     */
-    public static function logout(): void
-    {
-        self::start(); // セッションが開始されていない場合は開始
-        $_SESSION = []; // 全てのセッションデータをクリア
+        session_unset();   // すべてのセッション変数を解除
+        session_destroy(); // セッションを破棄
+        // クッキーからセッションIDを削除（オプション）
         if (ini_get("session.use_cookies")) {
             $params = session_get_cookie_params();
             setcookie(session_name(), '', time() - 42000,
@@ -140,29 +78,77 @@ class Session
                 $params["secure"], $params["httponly"]
             );
         }
-        session_destroy(); // セッションファイルを破棄
     }
 
     /**
-     * セッションハイジャック対策のための最終活動時刻チェック。
-     * 一定時間操作がない場合、セッションを期限切れと見なす。
-     * 必要に応じてログインページにリダイレクトするなどの処理を追加。
+     * ユーザーがログインしているかどうかをチェックします。
      *
-     * @param int $timeout_seconds タイムアウトまでの秒数 (デフォルト: 1800秒 = 30分)
-     * @return bool セッションが有効であれば true、無効であれば false (ログアウト済みの場合)
+     * @return bool ログインしていれば true、そうでなければ false
      */
-    public static function checkActivity(int $timeout_seconds = 1800): bool
+    public static function isLoggedIn(): bool
     {
-        self::start();
-        $lastActivity = self::get('last_activity');
+        return self::has('user_id');
+    }
 
-        if ($lastActivity && (time() - $lastActivity > $timeout_seconds)) {
-            self::logout(); // タイムアウトしたらログアウト
-            // 必要に応じてリダイレクト処理などをここに追加
-            return false;
+    /**
+     * ユーザーをログインさせます。
+     *
+     * @param int $userId ユーザーID
+     * @param string $userRole ユーザーのロール (例: 'user', 'admin')
+     */
+    public static function login(int $userId, string $userRole): void
+    {
+        self::set('user_id', $userId);
+        self::set('user_role', $userRole);
+        self::set('last_activity', time()); // 最終活動時刻を記録
+    }
+
+    /**
+     * ユーザーをログアウトさせます。
+     */
+    public static function logout(): void
+    {
+        self::destroy();
+    }
+
+    /**
+     * 現在ログインしているユーザーのIDを取得します。
+     *
+     * @return int|null ユーザーID、またはログインしていない場合は null
+     */
+    public static function getUserId(): ?int
+    {
+        return self::get('user_id');
+    }
+
+    /**
+     * 現在ログインしているユーザーのロールを取得します。
+     *
+     * @return string|null ユーザーのロール、またはログインしていない場合は null
+     */
+    public static function getUserRole(): ?string
+    {
+        return self::get('user_role');
+    }
+
+    /**
+     * セッションの活動状態をチェックし、非活動状態が一定時間続けばログアウトさせます。
+     * このメソッドは、各リクエストの開始時に呼び出すことを想定しています。
+     * 必要に応じて、タイムアウト時間 (秒) を調整してください。
+     */
+    public static function checkActivity(): void
+    {
+        // 1時間がタイムアウト時間 (秒)
+        $timeout = 3600;
+
+        if (self::has('last_activity') && (time() - self::get('last_activity') > $timeout)) {
+            // タイムアウトした場合
+            self::logout();
+            // フラッシュメッセージは、ログインページなどで表示されるように設定することが一般的です
+            // self::set('flash_message', 'セッションがタイムアウトしました。再度ログインしてください。');
+        } else {
+            // アクティブな場合は最終活動時刻を更新
+            self::set('last_activity', time());
         }
-
-        self::set('last_activity', time()); // 活動を更新
-        return true;
     }
 }
