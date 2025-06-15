@@ -41,29 +41,34 @@ if (!function_exists('getenv_docker')) {
 
 // ** Database settings - You can get this info from your web host ** //
 /** The name of the database for WordPress */
-define( 'DB_NAME', getenv_docker('WORDPRESS_DB_NAME', 'wordpress') );
+// define( 'DB_NAME', getenv_docker('WORDPRESS_DB_NAME', 'wordpress') );
 
-/** Database username */
-define( 'DB_USER', getenv_docker('WORDPRESS_DB_USER', 'example username') );
+// /** Database username */
+// define( 'DB_USER', getenv_docker('WORDPRESS_DB_USER', 'example username') );
 
-/** Database password */
-define( 'DB_PASSWORD', getenv_docker('WORDPRESS_DB_PASSWORD', 'example password') );
+// /** Database password */
+// define( 'DB_PASSWORD', getenv_docker('WORDPRESS_DB_PASSWORD', 'example password') );
 
-/**
- * Docker image fallback values above are sourced from the official WordPress installation wizard:
- * https://github.com/WordPress/WordPress/blob/1356f6537220ffdc32b9dad2a6cdbe2d010b7a88/wp-admin/setup-config.php#L224-L238
- * (However, using "example username" and "example password" in your database is strongly discouraged.  Please use strong, random credentials!)
- */
+// /**
+//  * Docker image fallback values above are sourced from the official WordPress installation wizard:
+//  * https://github.com/WordPress/WordPress/blob/1356f6537220ffdc32b9dad2a6cdbe2d010b7a88/wp-admin/setup-config.php#L224-L238
+//  * (However, using "example username" and "example password" in your database is strongly discouraged.  Please use strong, random credentials!)
+//  */
 
-/** Database hostname */
-define( 'DB_HOST', getenv_docker('WORDPRESS_DB_HOST', 'mysql') );
+// /** Database hostname */
+// define( 'DB_HOST', getenv_docker('WORDPRESS_DB_HOST', 'mysql') );
 
-/** Database charset to use in creating database tables. */
-define( 'DB_CHARSET', getenv_docker('WORDPRESS_DB_CHARSET', 'utf8') );
+// /** Database charset to use in creating database tables. */
+// define( 'DB_CHARSET', getenv_docker('WORDPRESS_DB_CHARSET', 'utf8') );
 
-/** The database collate type. Don't change this if in doubt. */
-define( 'DB_COLLATE', getenv_docker('WORDPRESS_DB_COLLATE', '') );
-
+// /** The database collate type. Don't change this if in doubt. */
+// define( 'DB_COLLATE', getenv_docker('WORDPRESS_DB_COLLATE', '') );
+define( 'DB_NAME', 'tiper' ); // .envのWORDPRESS_DB_NAMEと同じ
+define( 'DB_USER', 'tiper' ); // .envのWORDPRESS_DB_USERと同じ
+define( 'DB_PASSWORD', '1492nabe' ); // .envのWORDPRESS_DB_PASSWORDと同じ
+define( 'DB_HOST', 'mysql' ); // docker-compose.ymlのmysqlサービス名
+define( 'DB_CHARSET', 'utf8mb4' );
+define( 'DB_COLLATE', '' );
 /**#@+
  * Authentication unique keys and salts.
  *
