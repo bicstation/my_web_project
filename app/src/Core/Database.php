@@ -38,14 +38,15 @@ class Database
 
         $dsn = "mysql:host={$host};dbname={$dbname};charset={$charset}";
         $options = [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // エラーモードを例外に設定
+            PDO::ATTR_ERRMODE           => PDO::ERRMODE_EXCEPTION, // エラーモードを例外に設定
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,     // デフォルトのフェッチモードを連想配列に設定
-            PDO::ATTR_EMULATE_PREPARES   => false,                // プリペアドステートメントのエミュレーションを無効にする (セキュリティとパフォーマンスのため)
+            PDO::ATTR_EMULATE_PREPARES  => false,                // プリペアドステートメントのエミュレーションを無効にする (セキュリティとパフォーマンスのため)
         ];
 
         try {
             $this->pdo = new PDO($dsn, $user, $pass, $options);
-            $this->logger?->log("データベース接続に成功しました。");
+            // 修正: log() メソッドを info() メソッドに変更
+            $this->logger?->info("データベース接続に成功しました。");
         } catch (PDOException $e) {
             $errorMessage = "データベース接続エラー: " . $e->getMessage();
             $this->logger?->error($errorMessage);
