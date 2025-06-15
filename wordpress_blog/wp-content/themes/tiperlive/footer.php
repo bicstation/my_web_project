@@ -21,19 +21,19 @@
                     <div class="col-md-4 mb-3 mb-md-0">
                         <h5><i class="fas fa-link me-2"></i>関連ドメイン</h5>
                         <ul class="list-unstyled">
-                            <li><a href="http://tipers.live/" class="text-white text-decoration-none"><i class="fas fa-globe me-2"></i>tipers.live (メインサイト)</a></li>
-                            <li><a href="http://admin.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-user-cog me-2"></i>admin.tipers.live (管理パネル)</a></li>
-                            <li><a href="http://dti.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>dti.tipers.live (DTI環境)</a></li>
-                            <li><a href="http://duga.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>duga.tipers.live (DUGA環境)</a></li>
-                            <li><a href="http://fanza.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>fanza.tipers.live (FANZA環境)</a></li>
-                            <li><a href="http://dmm.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>dmm.tipers.live (DMM.com環境)</a></li>
-                            <li><a href="http://okashi.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>okashi.tipers.live (お菓子環境)</a></li>
-                            <li><a href="http://lemon.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>lemon.tipers.live (レモン環境)</a></li>
-                            <li><a href="http://b10f.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>b10f.tipers.live (地下10階環境)</a></li>
-                            <li><a href="http://sokmil.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>sokmil.tipers.live (ソクミル環境)</a></li>
-                            <li><a href="http://mgs.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>mgs.tipers.live (MGS環境)</a></li>
-                            <li><a href="http://blog.tipers.live/" class="text-white text-decoration-none"><i class="fas fa-blog me-2"></i>blog.tipers.live (ブログ)</a></li>
-                            <li><a href="http://tipers.live:8080/" class="text-white text-decoration-none"><i class="fas fa-database me-2"></i>phpMyAdmin (開発用)</a></li>
+                            <li><a href="https://tiper.live/" class="text-white text-decoration-none"><i class="fas fa-globe me-2"></i>tipers.live (メインサイト)</a></li>
+                            <li><a href="https://admin.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-user-cog me-2"></i>admin.tipers.live (管理パネル)</a></li>
+                            <li><a href="https://dti.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>dti.tipers.live (DTI環境)</a></li>
+                            <li><a href="https://duga.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>duga.tipers.live (DUGA環境)</a></li>
+                            <li><a href="https://fanza.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>fanza.tipers.live (FANZA環境)</a></li>
+                            <li><a href="https://dmm.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>dmm.tipers.live (DMM.com環境)</a></li>
+                            <li><a href="https://okashi.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>okashi.tipers.live (お菓子環境)</a></li>
+                            <li><a href="https://lemon.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>lemon.tipers.live (レモン環境)</a></li>
+                            <li><a href="https://b10f.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>b10f.tipers.live (地下10階環境)</a></li>
+                            <li><a href="https://sokmil.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>sokmil.tipers.live (ソクミル環境)</a></li>
+                            <li><a href="https://mgs.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-film me-2"></i>mgs.tipers.live (MGS環境)</a></li>
+                            <li><a href="https://blog.tiper.live/" class="text-white text-decoration-none"><i class="fas fa-blog me-2"></i>blog.tipers.live (ブログ)</a></li>
+                            <li><a href="https://162.43.71.24:8080/" class="text-white text-decoration-none"><i class="fas fa-database me-2"></i>phpMyAdmin (開発用)</a></li>
                         </ul>
                     </div>
                     <div class="col-md-4 mb-3 mb-md-0">
