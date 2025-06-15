@@ -29,6 +29,10 @@ class Logger
     {
         $this->writeLog('info', $message);
     }
+    public function log($message)
+    {
+        $this->writeLog('log', $message);
+    }
 
     public function warning($message)
     {
