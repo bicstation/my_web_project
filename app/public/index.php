@@ -3,6 +3,7 @@
 
 // Composerのオートローダーを読み込む
 // これにより、App名前空間下のクラスや、vlucas/phpdotenvなどのComposerが管理するライブラリが自動的にロードされます。
+// !!! 重要: このファイルの先頭に空白やBOMがないことを確認してください !!!
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 // Dotenvライブラリを使って.envファイルをロード (オートローダーの後に配置)
@@ -30,8 +31,7 @@ $dbConfig = [
 // ロガーとデータベース接続をグローバルで利用可能にする（sidebar.phpなどからアクセスするため）
 global $logger, $database, $pdo;
 try {
-    $logger = new Logger('main_app.log'); // <-- Loggerクラスがロードされる
-    // 修正: log() メソッドを info() メソッドに変更
+    $logger = new Logger('main_app.log'); // Loggerクラスがロードされる
     $logger->info("メインアプリケーション (index.php) へのアクセス処理を開始します。");
     $database = new Database($dbConfig, $logger);
     $pdo = $database->getConnection();
@@ -63,41 +63,112 @@ if ($isDugaDomain) {
 }
 
 // Debugging line: 現在のページとセッションのユーザーIDをPHPエラーログに出力
-// SessionクラスからユーザーIDを取得するように変更
 error_log("Current page requested: " . $currentPage . ", User ID in session: " . (Session::getUserId() ?? 'NOT SET'));
 
 
+// ====================================================================
+// !!! 重要: すべてのPOSTリクエスト処理とリダイレクトは、ここで行うべきです。
+// HTML出力が始まる前に実行されることが重要です。
+// ====================================================================
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    switch ($currentPage) {
+        case 'login':
+            // ログイン処理をここに直接記述、または専用のプロセッサファイルをインクルード
+            $submittedCsrfToken = $_POST['csrf_token'] ?? '';
+            if (!Session::has('csrf_token') || $submittedCsrfToken !== Session::get('csrf_token')) {
+                Session::set('flash_message', "<div class='alert alert-danger'>不正なリクエストです。ページを再読み込みしてください。</div>");
+                $logger->error("CSRFトークン検証失敗: " . ($_SERVER['REMOTE_ADDR'] ?? '不明なIP'));
+                // 不正なリクエストの場合は、ここで処理を続行せず、ログインページに戻る
+                header('Location: index.php?page=login');
+                exit();
+            } else {
+                $username = trim($_POST['username'] ?? '');
+                $password = $_POST['password'] ?? '';
+
+                if (empty($username) || empty($password)) {
+                    Session::set('flash_message', "<div class='alert alert-danger'>ユーザー名とパスワードを入力してください。</div>");
+                } else {
+                    try {
+                        // username または email でユーザーを検索
+                        $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username_param OR email = :email_param LIMIT 1");
+                        $stmt->execute([
+                            ':username_param' => $username,
+                            ':email_param'    => $username
+                        ]);
+                        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                        if ($user && password_verify($password, $user['password_hash'])) {
+                            Session::login($user['id'], $user['username'], $user['role']);
+                            Session::set('flash_message', "<div class='alert alert-success'>ログインに成功しました！ようこそ、" . htmlspecialchars($user['username']) . "さん！</div>");
+                            header('Location: index.php?page=dashboard');
+                            exit();
+                        } else {
+                            Session::set('flash_message', "<div class='alert alert-danger'>ユーザー名またはパスワードが間違っています。</div>");
+                            $logger->warning("ログイン失敗: 無効な認証情報 (ユーザー名/メール: {$username})。");
+                        }
+                    } catch (PDOException $e) {
+                        Session::set('flash_message', "<div class='alert alert-danger'>データベースエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>");
+                        error_log("Login DB error: " . $e->getMessage());
+                        $logger->error("ログインデータベースエラー: " . $e->getMessage());
+                    } catch (Exception $e) {
+                        Session::set('flash_message', "<div class='alert alert-danger'>アプリケーションエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>");
+                        error_log("Login application error: " . $e->getMessage());
+                        $logger->error("ログインアプリケーションエラー: " . $e->getMessage());
+                    }
+                }
+            }
+            // ログイン失敗の場合はHTML出力に進む
+            break;
+
+        case 'logout':
+            Session::logout(); // ログアウト処理
+            Session::set('flash_message', "<div class='alert alert-success'>ログアウトしました。</div>");
+            header('Location: index.php?page=home'); // ログアウト後にホームにリダイレクト
+            exit();
+            break;
+
+        // 他のページのPOST処理もここに追加していく (例: register, product_adminなど)
+        case 'register':
+            // register.php の POST 処理をここに移動するか、
+            // 別ファイルに分離して require_once する
+            break;
+
+        // ... その他の POST 処理 ...
+    }
+}
+
+// ====================================================================
+// アクセス権限チェックとリダイレクトもHTML出力前に行う
+// ====================================================================
+
 // 管理画面へのアクセスチェックとリダイレクト
-// ユーザー管理ページ (users_admin) と商品登録ページ (products_admin) はログインが必要なページとして保護
 $protected_pages = ['users_admin', 'products_admin', 'dashboard', 'profile']; // 保護したい管理ページを追加
 
 if (in_array($currentPage, $protected_pages)) {
-    // Sessionクラスを使ってログイン状態をチェック
     if (!Session::isLoggedIn()) {
-        // ログインしていない場合、ログインページにリダイレクト
         Session::set('flash_message', "<div class='alert alert-warning'>このページにアクセスするにはログインが必要です。</div>");
         header("Location: index.php?page=login");
-        exit(); // リダイレクト後、スクリプトの実行を停止
+        exit();
     }
 
-    // さらに、users_admin と products_admin は管理者権限が必要
     if (($currentPage === 'users_admin' || $currentPage === 'products_admin') && Session::getUserRole() !== 'admin') {
         Session::set('flash_message', "<div class='alert alert-danger'>このページにアクセスする権限がありません。</div>");
-        header('Location: index.php?page=home'); // 権限がない場合、ホームにリダイレクト
+        header('Location: index.php?page=home');
         exit();
     }
 }
 
 
-// ページのタイトルを設定
+// ページのタイトルを設定 (これはHTML出力なので、この位置で問題ありません)
 $pageTitle = "Tiper Live";
 if ($currentPage === 'users_admin') {
     $pageTitle = "Tiper Live - ユーザー管理";
 } elseif ($currentPage === 'products_admin') {
     $pageTitle = "Tiper Live - 商品登録";
 } elseif ($currentPage === 'duga_products_page') {
-    $pageTitle = "Duga 商品一覧 - Tiper Live"; // Dugaページ用のタイトル
-} elseif ($currentPage === 'duga_product_detail') { // 個別ページ用のタイトル
+    $pageTitle = "Duga 商品一覧 - Tiper Live";
+} elseif ($currentPage === 'duga_product_detail') {
     $pageTitle = "Duga 商品詳細 - Tiper Live";
 } elseif ($currentPage === 'dashboard') {
     $pageTitle = "Tiper Live - ダッシュボード";
@@ -129,6 +200,7 @@ if ($currentPage === 'users_admin') {
         <main id="main-content-area">
             <?php
             // フラッシュメッセージの表示 (一回だけ表示して削除)
+            // POST処理がHTML出力前に完了しているため、ここで安全に表示できます
             if (Session::has('flash_message')) {
                 echo Session::get('flash_message');
                 Session::remove('flash_message');
@@ -140,6 +212,7 @@ if ($currentPage === 'users_admin') {
             $contentPath = '';
             switch ($currentPage) {
                 case 'login':
+                    // login.php はフォームの表示のみを行う（POST処理はindex.phpで行う）
                     $contentPath = __DIR__ . '/login.php';
                     break;
                 case 'register':
@@ -158,16 +231,11 @@ if ($currentPage === 'users_admin') {
                     $contentPath = __DIR__ . '/duga_product_detail.php';
                     break;
                 case 'dashboard':
-                    $contentPath = __DIR__ . '/dashboard.php'; // 例: ダッシュボードページ
+                    $contentPath = __DIR__ . '/dashboard.php';
                     break;
                 case 'profile':
-                    $contentPath = __DIR__ . '/profile.php'; // 例: プロフィールページ
+                    $contentPath = __DIR__ . '/profile.php';
                     break;
-                case 'logout':
-                    Session::logout(); // ログアウト処理
-                    Session::set('flash_message', "<div class='alert alert-success'>ログアウトしました。</div>");
-                    header('Location: index.php?page=home'); // ログアウト後にホームにリダイレクト
-                    exit();
                 case 'home':
                 default:
                     // 通常のホームページコンテンツ
@@ -220,10 +288,8 @@ if ($currentPage === 'users_admin') {
             if ($contentPath && file_exists($contentPath)) {
                 include_once $contentPath;
             } elseif ($contentPath && !file_exists($contentPath)) {
-                // ファイルが存在しない場合は404エラーを表示
-                // ここでエラーログを出すか、ユーザーフレンドリーなメッセージを表示
                 error_log("Requested content file not found: " . $contentPath);
-                include_once __DIR__ . '/404.php'; // 404ページへのパス
+                include_once __DIR__ . '/404.php';
             }
             ?>
         </main><!-- #main-content-area -->

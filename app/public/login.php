@@ -1,93 +1,18 @@
 <?php
 // C:\project\my_web_project\app\public\login.php
 
-// エラーレポートの設定
+// エラーレポートの設定 (init.phpで設定されている可能性が高いが、念のため)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// init.php を読み込むことで、Composerのオートロード、セッション開始、環境変数のロードなどが行われます。
-// public/login.php から見て project_root/app/init.php へのパス
-require_once __DIR__ . '/../../app/init.php';
+// init.php は index.php で既に読み込まれているため、ここでは不要です。
+// もし単独でアクセスされる可能性があるなら必要ですが、ルーティング経由なら不要です。
+// require_once __DIR__ . '/../../app/init.php'; // 通常は不要
 
-use App\Core\Database;
-use App\Core\Logger;
 use App\Core\Session;
 
-// Loggerインスタンスをここで初期化し、スクリプト全体で利用可能にする
-// これにより、CSRFトークン検証失敗時など、早期のログ記録が必要な場合にも対応できます。
-$logger = new Logger('login.log');
-
-// フラッシュメッセージを取得し、セッションから削除
-$message = Session::get('flash_message');
-Session::delete('flash_message');
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRFトークンの検証
-    $submittedCsrfToken = $_POST['csrf_token'] ?? '';
-    if (!Session::has('csrf_token') || $submittedCsrfToken !== Session::get('csrf_token')) {
-        $message = "<div class='alert alert-danger'>不正なリクエストです。ページを再読み込みしてください。</div>";
-        // ここで、$logger インスタンスを使ってエラーをログに記録します。
-        $logger->error("CSRFトークン検証失敗: " . ($_SERVER['REMOTE_ADDR'] ?? '不明なIP'));
-        // 不正なリクエストの場合はここで処理を終了し、フォームを再表示するのが安全
-    } else {
-        $username = trim($_POST['username'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if (empty($username) || empty($password)) {
-            $message = "<div class='alert alert-danger'>ユーザー名とパスワードを入力してください。</div>";
-        } else {
-            try {
-                // データベース設定は .env ファイルからロードされた $_ENV を使用
-                // デフォルト値は開発環境用
-                $dbConfig = [
-                    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
-                    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
-                    'user'    => $_ENV['DB_USER'] ?? 'root',
-                    'pass'    => $_ENV['DB_PASS'] ?? 'password',
-                    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
-                ];
-
-                // DatabaseインスタンスにLoggerインスタンスを渡す
-                $database = new Database($dbConfig, $logger);
-                $pdo = $database->getConnection();
-
-                // 修正点: username または email でユーザーを検索するSQLクエリのプレースホルダーを明確に分ける
-                // これにより、Invalid parameter number エラーを回避します。
-                $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username_param OR email = :email_param LIMIT 1");
-                $stmt->execute([
-                    ':username_param' => $username, // ユーザー名としてバインド
-                    ':email_param'    => $username  // メールアドレスとしてバインド
-                ]);
-                $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($user && password_verify($password, $user['password_hash'])) {
-                    // 認証成功！セッションにユーザー情報を保存
-                    Session::login($user['id'], $user['username'], $user['role']);
-                    Session::set('flash_message', "<div class='alert alert-success'>ログインに成功しました！ようこそ、" . htmlspecialchars($user['username']) . "さん！</div>");
-
-                    // ログイン成功後はダッシュボードまたはホームにリダイレクト
-                    header('Location: index.php?page=dashboard');
-                    exit(); // リダイレクト後は必ずexit()でスクリプトの実行を終了
-                } else {
-                    $message = "<div class='alert alert-danger'>ユーザー名またはパスワードが間違っています。</div>";
-                    $logger->warning("ログイン失敗: 無効な認証情報 (ユーザー名/メール: {$username})。");
-                }
-
-            } catch (PDOException $e) {
-                $message = "<div class='alert alert-danger'>データベースエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
-                error_log("Login DB error: " . $e->getMessage());
-                // Loggerクラスがあればそちらにも記録
-                $logger->error("ログインデータベースエラー: " . $e->getMessage());
-            } catch (Exception $e) {
-                $message = "<div class='alert alert-danger'>アプリケーションエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
-                error_log("Login application error: " . $e->getMessage());
-                $logger->error("ログインアプリケーションエラー: " . $e->getMessage());
-            }
-        }
-    }
-}
-
 // フォームに表示するCSRFトークンを取得
+// index.php の処理によってセッションに設定されていることを前提とします
 $csrfToken = Session::get('csrf_token');
 ?>
 
@@ -161,9 +86,13 @@ $csrfToken = Session::get('csrf_token');
         <div class="card shadow-lg p-4" style="width: 100%; max-width: 400px;">
             <div class="card-body">
                 <h2 class="card-title text-center mb-4">ログイン</h2>
-                <?php if (!empty($message)): ?>
-                    <?= $message ?>
-                <?php endif; ?>
+                <?php
+                // フラッシュメッセージは index.php で表示されるため、ここでは不要です。
+                // ただし、もし login.php が単独で直接アクセスされる可能性があるなら、
+                // ここで改めて取得して表示してもよいでしょう。
+                // if (!empty($message)): ?>
+                //     <?= $message ?>
+                // <?php //endif; ?>
                 <form action="index.php?page=login" method="POST">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <div class="mb-3">
