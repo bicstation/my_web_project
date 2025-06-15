@@ -1,125 +1,84 @@
 <?php
-// C:\doc\my_web_project\app\public\login.php
-// ログインページ
+// C:\project\my_web_project\app\public\login.php
 
-// 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
-require_once __DIR__ . '/init.php';
+// init.php でセッションは既に開始されていることを前提とします
+use App\Core\Database;
+use App\Core\Logger;
+use App\Core\Session; // Sessionクラスをuse宣言
 
-// Debugging: ログインページのアクセス時にセッション情報をログに出力
-error_log("Login page accessed. Session user_id: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+$message = '';
 
-// ログイン済みの場合、ダッシュボードまたはホームにリダイレクト
-if (isset($_SESSION['user_id'])) {
-    error_log("Already logged in, redirecting to home. User ID: " . $_SESSION['user_id']);
-    header("Location: /"); // ログイン後はトップページにリダイレクト（後で管理ダッシュボードに変更）
-    exit();
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-$login_message = "";
-
-// -----------------------------------------------------
-// ログイン処理
-// -----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
-    $email = $_POST['email'];
-    $password = $_POST['password'];
-
-    // 環境変数からデータベース接続情報を取得
-    $db_host = getenv('DB_HOST');
-    $db_name = getenv('DB_NAME');
-    $db_user = getenv('DB_USER');
-    $db_password = getenv('DB_PASSWORD');
-
-    $conn = new mysqli($db_host, $db_user, $db_password, $db_name);
-
-    if ($conn->connect_error) {
-        $login_message = "<div class='alert alert-danger'>データベース接続エラー: " . $conn->connect_error . "</div>";
-        error_log("Login DB connection error: " . $conn->connect_error);
+    if (empty($username) || empty($password)) {
+        $message = "<div class='alert alert-danger'>ユーザー名とパスワードを入力してください。</div>";
     } else {
-        $stmt = $conn->prepare("SELECT id, username, email, password_hash FROM users WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        try {
+            // データベース設定は init.php でロードされているものを使用
+            $dbConfig = [
+                'host'    => $_ENV['DB_HOST'] ?? 'localhost',
+                'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
+                'user'    => $_ENV['DB_USER'] ?? 'root',
+                'pass'    => $_ENV['DB_PASS'] ?? 'password',
+                'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+            ];
 
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
-            if (password_verify($password, $user['password_hash'])) {
-                // ログイン成功
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['user_name'] = $user['username'];
-                $_SESSION['user_email'] = $user['email'];
-                $login_message = "<div class='alert alert-success'>ログイン成功！</div>";
-                
-                // Debugging: ログイン成功時にセッション情報がセットされたことをログに出力
-                error_log("Login successful! User ID set in session: " . $_SESSION['user_id'] . ", Username: " . $_SESSION['user_name']);
+            $logger = new Logger('login.log');
+            $database = new Database($dbConfig, $logger);
+            $pdo = $database->getConnection();
 
-                // ★追加: リダイレクト直前のセッション内容をログに出力
-                error_log("Login.php - SESSION before redirect: " . print_r($_SESSION, true));
+            $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username OR email = :username LIMIT 1");
+            $stmt->execute([':username' => $username]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                // セッションにデータが書き込まれたので、すぐにリダイレクト
-                header("Location: /");
+            if ($user && password_verify($password, $user['password_hash'])) {
+                // 認証成功！セッションにユーザー情報を保存
+                Session::login($user['id'], $user['username'], $user['role']);
+                Session::set('flash_message', "<div class='alert alert-success'>ログインに成功しました！ようこそ、" . htmlspecialchars($user['username']) . "さん！</div>");
+
+                // ログイン成功後はダッシュボードまたはホームにリダイレクト
+                header('Location: index.php?page=dashboard');
                 exit();
             } else {
-                $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
-                error_log("Login failed: Password verification failed for email: " . $email);
+                $message = "<div class='alert alert-danger'>ユーザー名またはパスワードが間違っています。</div>";
+                $logger->warning("ログイン失敗: 無効な認証情報 (ユーザー名/メール: {$username})。");
             }
-        } else {
-            $login_message = "<div class='alert alert-danger'>Eメールまたはパスワードが正しくありません。</div>";
-            error_log("Login failed: User not found or multiple users for email: " . $email);
+
+        } catch (PDOException $e) {
+            $message = "<div class='alert alert-danger'>データベースエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
+            error_log("Login DB error: " . $e->getMessage());
+        } catch (Exception $e) {
+            $message = "<div class='alert alert-danger'>アプリケーションエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>";
+            error_log("Login application error: " . $e->getMessage());
         }
-        $stmt->close();
-        $conn->close();
     }
 }
+
+// ログインフォームのHTML
 ?>
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ログイン</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .login-container {
-            background-color: #fff;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-        }
-        .login-container h2 {
-            margin-bottom: 30px;
-            color: #007bff;
-            text-align: center;
-        }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <h2>ログイン</h2>
-        <?php if (!empty($login_message)) { echo $login_message; } ?>
-        <form method="POST" action="">
-            <input type="hidden" name="action" value="login">
-            <div class="mb-3">
-                <label for="email" class="form-label">Eメール</label>
-                <input type="email" class="form-control" id="email" name="email" required autocomplete="username">
+<div class="container d-flex justify-content-center align-items-center min-vh-100">
+    <div class="card shadow-lg p-4" style="width: 100%; max-width: 400px;">
+        <div class="card-body">
+            <h2 class="card-title text-center mb-4">ログイン</h2>
+            <?php if (!empty($message)): ?>
+                <?= $message ?>
+            <?php endif; ?>
+            <form action="index.php?page=login" method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">ユーザー名またはメールアドレス</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">パスワード</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 mt-3">ログイン</button>
+            </form>
+            <div class="text-center mt-3">
+                <p>アカウントをお持ちではありませんか？ <a href="index.php?page=register">新規登録</a></p>
             </div>
-            <div class="mb-3">
-                <label for="password" class="form-label">パスワード</label>
-                <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
-            </div>
-            <div class="d-grid gap-2">
-                <button type="submit" class="btn btn-primary">ログイン</button>
-            </div>
-        </form>
+        </div>
     </div>
-</body>
-</html>
+</div>

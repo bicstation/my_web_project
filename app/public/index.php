@@ -11,12 +11,12 @@ $dotenv->load();
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
 // init.php がセッションを開始する前に、ここまでの出力がないことを確認することが重要。
-require_once __DIR__ . '/init.php';
+require_once __DIR__ . '/../init.php'; // パスを app/init.php に修正
 
 // 名前空間を使用するクラスをインポート
 use App\Core\Logger;
 use App\Core\Database;
-// use PDOException; // PDOException はグローバルクラスなので不要です
+use App\Core\Session; // Sessionクラスをインポート
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -61,26 +61,32 @@ if ($isDugaDomain) {
     }
 }
 
-// ★追加: $currentPage の値をログに出力して確認
-error_log("DEBUG: index.php - \$currentPage before switch: " . $currentPage);
-
-
 // Debugging line: 現在のページとセッションのユーザーIDをPHPエラーログに出力
-error_log("Current page requested: " . $currentPage . ", User ID in session: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+// SessionクラスからユーザーIDを取得するように変更
+error_log("Current page requested: " . $currentPage . ", User ID in session: " . (Session::getUserId() ?? 'NOT SET'));
 
 
 // 管理画面へのアクセスチェックとリダイレクト
 // ユーザー管理ページ (users_admin) と商品登録ページ (products_admin) はログインが必要なページとして保護
-$protected_pages = ['users_admin', 'products_admin']; // ここに保護したい管理ページを追加
+$protected_pages = ['users_admin', 'products_admin', 'dashboard', 'profile']; // 保護したい管理ページを追加
 
 if (in_array($currentPage, $protected_pages)) {
-    if (!isset($_SESSION['user_id'])) {
+    // Sessionクラスを使ってログイン状態をチェック
+    if (!Session::isLoggedIn()) {
         // ログインしていない場合、ログインページにリダイレクト
-        header("Location: /login.php");
+        Session::set('flash_message', "<div class='alert alert-warning'>このページにアクセスするにはログインが必要です。</div>");
+        header("Location: index.php?page=login");
         exit(); // リダイレクト後、スクリプトの実行を停止
     }
-    // ログイン済みの場合、そのまま続行
+
+    // さらに、users_admin と products_admin は管理者権限が必要
+    if (($currentPage === 'users_admin' || $currentPage === 'products_admin') && Session::getUserRole() !== 'admin') {
+        Session::set('flash_message', "<div class='alert alert-danger'>このページにアクセスする権限がありません。</div>");
+        header('Location: index.php?page=home'); // 権限がない場合、ホームにリダイレクト
+        exit();
+    }
 }
+
 
 // ページのタイトルを設定
 $pageTitle = "Tiper Live";
@@ -90,10 +96,18 @@ if ($currentPage === 'users_admin') {
     $pageTitle = "Tiper Live - 商品登録";
 } elseif ($currentPage === 'duga_products_page') {
     $pageTitle = "Duga 商品一覧 - Tiper Live"; // Dugaページ用のタイトル
-} elseif ($currentPage === 'duga_product_detail') { // ★追加: 個別ページ用のタイトル
+} elseif ($currentPage === 'duga_product_detail') { // 個別ページ用のタイトル
     $pageTitle = "Duga 商品詳細 - Tiper Live";
+} elseif ($currentPage === 'dashboard') {
+    $pageTitle = "Tiper Live - ダッシュボード";
+} elseif ($currentPage === 'profile') {
+    $pageTitle = "Tiper Live - プロフィール";
+} elseif ($currentPage === 'login') {
+    $pageTitle = "Tiper Live - ログイン";
+} elseif ($currentPage === 'register') {
+    $pageTitle = "Tiper Live - 新規登録";
 }
-// 必要に応じて、他のページのタイトルもここで設定可能
+
 
 ?>
 <!DOCTYPE html>
@@ -113,25 +127,50 @@ if ($currentPage === 'users_admin') {
     <div class="p-3 grid-main">
         <main id="main-content-area">
             <?php
+            // フラッシュメッセージの表示 (一回だけ表示して削除)
+            if (Session::has('flash_message')) {
+                echo Session::get('flash_message');
+                Session::remove('flash_message');
+            }
+            ?>
+
+            <?php
             // $currentPage に基づいてメインコンテンツを読み込む
+            $contentPath = '';
             switch ($currentPage) {
+                case 'login':
+                    $contentPath = __DIR__ . '/login.php';
+                    break;
+                case 'register':
+                    $contentPath = __DIR__ . '/register.php';
+                    break;
                 case 'users_admin':
-                    // ユーザー管理ページの場合
-                    include_once __DIR__ . '/users_admin_crud.php';
+                    $contentPath = __DIR__ . '/users_admin_crud.php';
                     break;
                 case 'products_admin':
-                    // 商品登録ページの場合
-                    include_once __DIR__ . '/products_admin.php';
+                    $contentPath = __DIR__ . '/products_admin.php';
                     break;
-                case 'duga_products_page': // Duga専用ページの場合
-                    include_once __DIR__ . '/duga_products.php';
+                case 'duga_products_page':
+                    $contentPath = __DIR__ . '/duga_products.php';
                     break;
-                case 'duga_product_detail': // ★追加: Duga商品個別ページの場合
-                    include_once __DIR__ . '/duga_product_detail.php';
+                case 'duga_product_detail':
+                    $contentPath = __DIR__ . '/duga_product_detail.php';
                     break;
+                case 'dashboard':
+                    $contentPath = __DIR__ . '/dashboard.php'; // 例: ダッシュボードページ
+                    break;
+                case 'profile':
+                    $contentPath = __DIR__ . '/profile.php'; // 例: プロフィールページ
+                    break;
+                case 'logout':
+                    Session::logout(); // ログアウト処理
+                    Session::set('flash_message', "<div class='alert alert-success'>ログアウトしました。</div>");
+                    header('Location: index.php?page=home'); // ログアウト後にホームにリダイレクト
+                    exit();
                 case 'home':
                 default:
                     // 通常のホームページコンテンツ
+                    $contentPath = null; // デフォルトコンテンツを直接HTMLで記述するため
                     ?>
                     <nav aria-label="breadcrumb">
                         <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
@@ -174,6 +213,16 @@ if ($currentPage === 'users_admin') {
                     </div>
                     <?php
                     break;
+            }
+
+            // コンテンツファイルをインクルード
+            if ($contentPath && file_exists($contentPath)) {
+                include_once $contentPath;
+            } elseif ($contentPath && !file_exists($contentPath)) {
+                // ファイルが存在しない場合は404エラーを表示
+                // ここでエラーログを出すか、ユーザーフレンドリーなメッセージを表示
+                error_log("Requested content file not found: " . $contentPath);
+                include_once __DIR__ . '/404.php'; // 404ページへのパス
             }
             ?>
         </main><!-- #main-content-area -->
