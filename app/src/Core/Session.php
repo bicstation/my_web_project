@@ -53,6 +53,22 @@ class Session
     }
 
     /**
+     * セッションから指定されたキーを削除します。
+     *
+     * @param string $key 削除するセッションキー
+     * @return void
+     */
+    public static function delete(string $key): void
+    {
+        if (isset($_SESSION[$key])) {
+            unset($_SESSION[$key]);
+        }
+    }
+
+    // ... その他の既存メソッド (get, set, has, login, checkActivity, isLoggedIn, logout など) ...
+
+
+    /**
      * セッションに指定されたキーが存在するかどうかを確認します。
      *
      * @param string $key キー
