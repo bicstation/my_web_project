@@ -188,6 +188,136 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             break;
+
+        case 'users_admin': // === ここからusers_admin_crud.phpからの移動 ===
+            // 管理者権限チェック（POST処理前）
+            if (!Session::isLoggedIn() || Session::getUserRole() !== 'admin') {
+                Session::set('flash_message', '<div class="alert alert-danger">このページへのアクセス権限がありません。</div>');
+                header('Location: index.php?page=home');
+                exit();
+            }
+
+            $action = $_POST['action'] ?? '';
+            $submittedCsrfToken = $_POST['csrf_token'] ?? '';
+
+            // CSRFトークン検証
+            if (!Session::verifyCsrfToken($submittedCsrfToken)) {
+                Session::set('flash_message', '<div class="alert alert-danger">不正なリクエストです。ページを再読み込みしてください。</div>');
+                $logger->error("CSRFトークン検証失敗: users_admin_crud - IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN'));
+                header('Location: index.php?page=users_admin');
+                exit();
+            }
+
+            try {
+                switch ($action) {
+                    case 'add':
+                        $username = trim($_POST['username'] ?? '');
+                        $email = trim($_POST['email'] ?? '');
+                        $password = $_POST['password'] ?? '';
+                        $role = $_POST['role'] ?? 'user';
+
+                        if (empty($username) || empty($email) || empty($password)) {
+                            Session::set('flash_message', '<div class="alert alert-danger">ユーザー名、メール、パスワードは必須です。</div>');
+                        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                            Session::set('flash_message', '<div class="alert alert-danger">無効なメールアドレス形式です。</div>');
+                        } else {
+                            // ユーザー名またはメールが既に存在するかチェック
+                            $stmt_check = $pdo->prepare("SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1");
+                            $stmt_check->execute([':username' => $username, ':email' => $email]);
+                            if ($stmt_check->fetch()) {
+                                Session::set('flash_message', '<div class="alert alert-danger">そのユーザー名またはメールアドレスは既に登録されています。</div>');
+                            } else {
+                                $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+                                $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash, role) VALUES (:username, :email, :password_hash, :role)");
+                                if ($stmt->execute([':username' => $username, ':email' => $email, ':password_hash' => $passwordHash, ':role' => $role])) {
+                                    Session::set('flash_message', '<div class="alert alert-success">ユーザーが追加されました。</div>');
+                                    $logger->info("ユーザー追加成功: ID - " . $pdo->lastInsertId() . ", Username - " . $username . ", Role - " . $role);
+                                } else {
+                                    Session::set('flash_message', '<div class="alert alert-danger">ユーザーの追加に失敗しました。</div>');
+                                    $logger->error("ユーザー追加失敗: " . json_encode($stmt->errorInfo()));
+                                }
+                            }
+                        }
+                        break;
+
+                    case 'edit':
+                        $id = $_POST['id'] ?? 0;
+                        $username = trim($_POST['username'] ?? '');
+                        $email = trim($_POST['email'] ?? '');
+                        $role = $_POST['role'] ?? 'user';
+                        $password = $_POST['password'] ?? ''; // パスワードはオプション
+
+                        if (empty($id) || empty($username) || empty($email)) {
+                            Session::set('flash_message', '<div class="alert alert-danger">ユーザーID、ユーザー名、メールは必須です。</div>');
+                        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                            Session::set('flash_message', '<div class="alert alert-danger">無効なメールアドレス形式です。</div>');
+                        } else {
+                            // 他のユーザーが同じユーザー名またはメールアドレスを使用していないかチェック (自分自身は除く)
+                            $stmt_check = $pdo->prepare("SELECT id FROM users WHERE (username = :username OR email = :email) AND id != :id LIMIT 1");
+                            $stmt_check->execute([':username' => $username, ':email' => $email, ':id' => $id]);
+                            if ($stmt_check->fetch()) {
+                                Session::set('flash_message', '<div class="alert alert-danger">そのユーザー名またはメールアドレスは既に他のユーザーに使用されています。</div>');
+                            } else {
+                                $sql = "UPDATE users SET username = :username, email = :email, role = :role";
+                                $params = [
+                                    ':username' => $username,
+                                    ':email' => $email,
+                                    ':role' => $role,
+                                    ':id' => $id
+                                ];
+
+                                if (!empty($password)) {
+                                    $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+                                    $sql .= ", password_hash = :password_hash";
+                                    $params[':password_hash'] = $passwordHash;
+                                }
+                                $sql .= " WHERE id = :id";
+                                $stmt = $pdo->prepare($sql);
+
+                                if ($stmt->execute($params)) {
+                                    Session::set('flash_message', '<div class="alert alert-success">ユーザーが更新されました。</div>');
+                                    $logger->info("ユーザー更新成功: ID - " . $id . ", Username - " . $username . ", Role - " . $role);
+                                } else {
+                                    Session::set('flash_message', '<div class="alert alert-danger">ユーザーの更新に失敗しました。</div>');
+                                    $logger->error("ユーザー更新失敗: " . json_encode($stmt->errorInfo()));
+                                }
+                            }
+                        }
+                        break;
+
+                    case 'delete':
+                        $id = $_POST['id'] ?? 0;
+                        if (!empty($id)) {
+                            // 削除対象のユーザーが自分自身ではないことを確認
+                            if ($id == Session::getUserId()) {
+                                Session::set('flash_message', '<div class="alert alert-danger">自分自身のアカウントは削除できません。</div>');
+                                $logger->warning("自分自身のアカウント削除試行: User ID - " . Session::getUserId());
+                            } else {
+                                $stmt = $pdo->prepare("DELETE FROM users WHERE id = :id");
+                                if ($stmt->execute([':id' => $id])) {
+                                    Session::set('flash_message', '<div class="alert alert-success">ユーザーが削除されました。</div>');
+                                    $logger->info("ユーザー削除成功: ID - " . $id);
+                                } else {
+                                    Session::set('flash_message', '<div class="alert alert-danger">ユーザーの削除に失敗しました。</div>');
+                                    $logger->error("ユーザー削除失敗: " . json_encode($stmt->errorInfo()));
+                                }
+                            }
+                        }
+                        break;
+                }
+            } catch (PDOException $e) {
+                Session::set('flash_message', '<div class="alert alert-danger">データベースエラーが発生しました: ' . htmlspecialchars($e->getMessage()) . '</div>');
+                $logger->error("ユーザー管理操作データベースエラー: " . $e->getMessage());
+            } catch (Exception $e) {
+                Session::set('flash_message', '<div class="alert alert-danger">予期せぬエラーが発生しました: ' . htmlspecialchars($e->getMessage()) . '</div>');
+                $logger->error("ユーザー管理操作予期せぬエラー: " . $e->getMessage());
+            }
+            // users_adminページでのPOST処理後、常に同じページにリダイレクト
+            header('Location: index.php?page=users_admin');
+            exit();
+            // === users_admin_crud.phpからの移動ここまで ===
+
+        // 他のページに対するPOST処理もここに追加...
     }
 }
 
@@ -270,7 +400,7 @@ if ($currentPage === 'users_admin') {
                     $contentPath = __DIR__ . '/register.php';
                     break;
                 case 'users_admin':
-                    $contentPath = __DIR__ . '/users_admin_crud.php';
+                    $contentPath = __DIR__ . '/users_admin_crud.php'; // このファイルはPOST処理を含まない純粋な表示になる
                     break;
                 case 'products_admin':
                     $contentPath = __DIR__ . '/products_admin.php';

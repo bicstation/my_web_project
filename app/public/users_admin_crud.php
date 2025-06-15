@@ -4,145 +4,31 @@
 // 必須: グローバルスコープからロガーとPDOインスタンスにアクセスできるようにする
 global $pdo, $logger;
 
-// CSRFトークンを取得
+/** @var \App\Core\Logger $logger */ // この行を追加
+/** @var \PDO $pdo */ // 必要であればPDOにも追加できますが、通常は不要です
+
+// CSRFトークンを取得 (フォーム用)
 $csrfToken = App\Core\Session::generateCsrfToken();
 
-// ユーザー管理ページにアクセスするには管理者権限が必要
+// Note: 管理者権限チェックはindex.phpのPOSTハンドリングとHTML出力前に行われるため、
+// ここで再度リダイレクトを伴うチェックは不要（または行うべきではない）。
+// 万一アクセスされた場合のエラーログは残す。
 if (!App\Core\Session::isLoggedIn() || App\Core\Session::getUserRole() !== 'admin') {
-    App\Core\Session::set('flash_message', '<div class="alert alert-danger">このページにアクセスする権限がありません。</div>');
-    header('Location: index.php?page=home');
-    exit();
+    // このメッセージは通常、index.phpでセットされ、このファイルが表示される前にリダイレクトされるはず
+    $logger->warning("権限のないユーザーがusers_admin_crud.phpに直接アクセスしようとしました。User ID: " . (App\Core\Session::getUserId() ?? 'N/A'));
+    // ここでheader()は使用しない。index.phpでリダイレクトされる。
 }
 
-$message = '';
 $users = [];
-
-// フォームが送信された場合の処理
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    $submittedCsrfToken = $_POST['csrf_token'] ?? '';
-
-    // CSRFトークン検証
-    if (!App\Core\Session::verifyCsrfToken($submittedCsrfToken)) {
-        App\Core\Session::set('flash_message', '<div class="alert alert-danger">不正なリクエストです。ページを再読み込みしてください。</div>');
-        $logger->error("CSRFトークン検証失敗: users_admin_crud - IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN'));
-        header('Location: index.php?page=users_admin');
-        exit();
-    }
-
-    try {
-        switch ($action) {
-            case 'add':
-                $username = trim($_POST['username'] ?? '');
-                $email = trim($_POST['email'] ?? '');
-                $password = $_POST['password'] ?? '';
-                $role = $_POST['role'] ?? 'user';
-
-                if (empty($username) || empty($email) || empty($password)) {
-                    $message = '<div class="alert alert-danger">ユーザー名、メール、パスワードは必須です。</div>';
-                } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $message = '<div class="alert alert-danger">無効なメールアドレス形式です。</div>';
-                } else {
-                    // ユーザー名またはメールが既に存在するかチェック
-                    $stmt_check = $pdo->prepare("SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1");
-                    $stmt_check->execute([':username' => $username, ':email' => $email]);
-                    if ($stmt_check->fetch()) {
-                        $message = '<div class="alert alert-danger">そのユーザー名またはメールアドレスは既に登録されています。</div>';
-                    } else {
-                        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                        $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash, role) VALUES (:username, :email, :password_hash, :role)");
-                        if ($stmt->execute([':username' => $username, ':email' => $email, ':password_hash' => $passwordHash, ':role' => $role])) {
-                            $message = '<div class="alert alert-success">ユーザーが追加されました。</div>';
-                            $logger->info("ユーザー追加成功: ID - " . $pdo->lastInsertId() . ", Username - " . $username . ", Role - " . $role);
-                        } else {
-                            $message = '<div class="alert alert-danger">ユーザーの追加に失敗しました。</div>';
-                            $logger->error("ユーザー追加失敗: " . json_encode($stmt->errorInfo())); // ここを修正
-                        }
-                    }
-                }
-                break;
-
-            case 'edit':
-                $id = $_POST['id'] ?? 0;
-                $username = trim($_POST['username'] ?? '');
-                $email = trim($_POST['email'] ?? '');
-                $role = $_POST['role'] ?? 'user';
-                $password = $_POST['password'] ?? ''; // パスワードはオプション
-
-                if (empty($id) || empty($username) || empty($email)) {
-                    $message = '<div class="alert alert-danger">ユーザーID、ユーザー名、メールは必須です。</div>';
-                } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $message = '<div class="alert alert-danger">無効なメールアドレス形式です。</div>';
-                } else {
-                    // 他のユーザーが同じユーザー名またはメールアドレスを使用していないかチェック (自分自身は除く)
-                    $stmt_check = $pdo->prepare("SELECT id FROM users WHERE (username = :username OR email = :email) AND id != :id LIMIT 1");
-                    $stmt_check->execute([':username' => $username, ':email' => $email, ':id' => $id]);
-                    if ($stmt_check->fetch()) {
-                        $message = '<div class="alert alert-danger">そのユーザー名またはメールアドレスは既に他のユーザーに使用されています。</div>';
-                    } else {
-                        $sql = "UPDATE users SET username = :username, email = :email, role = :role";
-                        $params = [
-                            ':username' => $username,
-                            ':email' => $email,
-                            ':role' => $role,
-                            ':id' => $id
-                        ];
-
-                        if (!empty($password)) {
-                            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                            $sql .= ", password_hash = :password_hash";
-                            $params[':password_hash'] = $passwordHash;
-                        }
-                        $sql .= " WHERE id = :id";
-                        $stmt = $pdo->prepare($sql);
-
-                        if ($stmt->execute($params)) {
-                            $message = '<div class="alert alert-success">ユーザーが更新されました。</div>';
-                            $logger->info("ユーザー更新成功: ID - " . $id . ", Username - " . $username . ", Role - " . $role);
-                        } else {
-                            $message = '<div class="alert alert-danger">ユーザーの更新に失敗しました。</div>';
-                            $logger->error("ユーザー更新失敗: " . json_encode($stmt->errorInfo())); // ここを修正
-                        }
-                    }
-                }
-                break;
-
-            case 'delete':
-                $id = $_POST['id'] ?? 0;
-                if (!empty($id)) {
-                    // 削除対象のユーザーが自分自身ではないことを確認
-                    if ($id == App\Core\Session::getUserId()) {
-                        $message = '<div class="alert alert-danger">自分自身のアカウントは削除できません。</div>';
-                        $logger->warning("自分自身のアカウント削除試行: User ID - " . App\Core\Session::getUserId());
-                    } else {
-                        $stmt = $pdo->prepare("DELETE FROM users WHERE id = :id");
-                        if ($stmt->execute([':id' => $id])) {
-                            $message = '<div class="alert alert-success">ユーザーが削除されました。</div>';
-                            $logger->info("ユーザー削除成功: ID - " . $id);
-                        } else {
-                            $message = '<div class="alert alert-danger">ユーザーの削除に失敗しました。</div>';
-                            $logger->error("ユーザー削除失敗: " . json_encode($stmt->errorInfo())); // ここを修正
-                        }
-                    }
-                }
-                break;
-        }
-    } catch (PDOException $e) {
-        $message = '<div class="alert alert-danger">データベースエラーが発生しました: ' . htmlspecialchars($e->getMessage()) . '</div>';
-        $logger->error("ユーザー管理操作データベースエラー: " . $e->getMessage()); // ここを修正
-    } catch (Exception $e) {
-        $message = '<div class="alert alert-danger">予期せぬエラーが発生しました: ' . htmlspecialchars($e->getMessage()) . '</div>';
-        $logger->error("ユーザー管理操作予期せぬエラー: " . $e->getMessage()); // ここを修正
-    }
-}
 
 // ユーザーリストの取得
 try {
     $stmt = $pdo->query("SELECT id, username, email, role FROM users ORDER BY id ASC");
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $message = '<div class="alert alert-danger">ユーザーリストの取得に失敗しました: ' . htmlspecialchars($e->getMessage()) . '</div>';
-    $logger->error("ユーザーリスト取得データベースエラー: " . $e->getMessage()); // ここを修正
+    // ユーザーリストの取得エラーはセッションのフラッシュメッセージとして記録
+    App\Core\Session::set('flash_message', '<div class="alert alert-danger">ユーザーリストの取得に失敗しました: ' . htmlspecialchars($e->getMessage()) . '</div>');
+    $logger->error("ユーザーリスト取得データベースエラー: " . $e->getMessage());
     $users = []; // エラー時は空にする
 }
 
@@ -158,7 +44,7 @@ try {
 
     <h1 class="mb-4 text-center">ユーザー管理</h1>
 
-    <?php echo $message; ?>
+    <?php // $message; // $message変数は使用されなくなったためコメントアウト ?>
 
     <!-- ユーザー追加フォーム -->
     <div class="card mb-4 shadow-sm">
