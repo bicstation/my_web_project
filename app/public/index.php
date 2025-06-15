@@ -1,5 +1,8 @@
 <?php
 // C:\project\my_web_project\app\public\index.php
+// public/index.php の先頭あたりに追記 (一時的)
+ini_set('display_errors', 'On');
+error_reporting(E_ALL);
 
 // Composerのオートローダーを読み込む - これは常にファイルの早い段階で必要です
 require_once __DIR__ . '/../../vendor/autoload.php';
