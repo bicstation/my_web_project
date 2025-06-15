@@ -2,22 +2,19 @@
 // C:\project\my_web_project\app\public\index.php
 
 // Composerのオートローダーを読み込む
-// これにより、App名前空間下のクラスや、vlucas/phpdotenvなどのComposerが管理するライブラリが自動的にロードされます。
-// !!! 重要: このファイルの先頭に空白やBOMがないことを確認してください !!!
 require_once __DIR__ . '/../../vendor/autoload.php';
 
-// Dotenvライブラリを使って.envファイルをロード (オートローダーの後に配置)
+// Dotenvライブラリを使って.envファイルをロード
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
 $dotenv->load();
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
-// init.php がセッションを開始する前に、ここまでの出力がないことを確認することが重要。
-require_once __DIR__ . '/../init.php'; // パスを app/init.php に修正
+require_once __DIR__ . '/../init.php';
 
 // 名前空間を使用するクラスをインポート
 use App\Core\Logger;
 use App\Core\Database;
-use App\Core\Session; // Sessionクラスをインポート
+use App\Core\Session;
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -28,41 +25,34 @@ $dbConfig = [
     'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
-// ロガーとデータベース接続をグローバルで利用可能にする（sidebar.phpなどからアクセスするため）
+// ロガーとデータベース接続をグローバルで利用可能にする
 global $logger, $database, $pdo;
 try {
-    $logger = new Logger('main_app.log'); // Loggerクラスがロードされる
+    $logger = new Logger('main_app.log');
     $logger->info("メインアプリケーション (index.php) へのアクセス処理を開始します。");
     $database = new Database($dbConfig, $logger);
     $pdo = $database->getConnection();
 } catch (Exception $e) {
-    // データベース接続エラーなどの初期化エラー
     error_log("Main application initialization error: " . $e->getMessage());
-    die("サイトの初期化中にエラーが発生しました。ログを確認してください。"); // ユーザーに表示
+    die("サイトの初期化中にエラーが発生しました。ログを確認してください。");
 }
-
 
 // URLのクエリパラメータ 'page' を取得、またはホスト名に基づいてページを決定
 $currentPage = $_GET['page'] ?? 'home';
 $isDugaDomain = ($_SERVER['HTTP_HOST'] === 'duga.tipers.live');
 
-// Dugaドメインからのアクセスであれば、ページをDuga関連ページに限定する
 if ($isDugaDomain) {
     if (isset($_GET['page'])) {
         if ($_GET['page'] === 'duga_product_detail') {
             $currentPage = 'duga_product_detail';
         } else {
-            // dugaドメインでpageパラメータがあるが、duga_product_detailではない場合、
-            // デフォルトのduga_products_pageにフォールバック
             $currentPage = 'duga_products_page';
         }
     } else {
-        // dugaドメインでpageパラメータがない場合
         $currentPage = 'duga_products_page';
     }
 }
 
-// Debugging line: 現在のページとセッションのユーザーIDをPHPエラーログに出力
 error_log("Current page requested: " . $currentPage . ", User ID in session: " . (Session::getUserId() ?? 'NOT SET'));
 
 
@@ -74,12 +64,11 @@ error_log("Current page requested: " . $currentPage . ", User ID in session: " .
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($currentPage) {
         case 'login':
-            // ログイン処理をここに直接記述、または専用のプロセッサファイルをインクルード
             $submittedCsrfToken = $_POST['csrf_token'] ?? '';
-            if (!Session::has('csrf_token') || $submittedCsrfToken !== Session::get('csrf_token')) {
+            // SessionクラスのverifyCsrfTokenメソッドを使用
+            if (!Session::verifyCsrfToken($submittedCsrfToken)) {
                 Session::set('flash_message', "<div class='alert alert-danger'>不正なリクエストです。ページを再読み込みしてください。</div>");
                 $logger->error("CSRFトークン検証失敗: " . ($_SERVER['REMOTE_ADDR'] ?? '不明なIP'));
-                // 不正なリクエストの場合は、ここで処理を続行せず、ログインページに戻る
                 header('Location: index.php?page=login');
                 exit();
             } else {
@@ -90,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Session::set('flash_message', "<div class='alert alert-danger'>ユーザー名とパスワードを入力してください。</div>");
                 } else {
                     try {
-                        // username または email でユーザーを検索
                         $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username_param OR email = :email_param LIMIT 1");
                         $stmt->execute([
                             ':username_param' => $username,
@@ -118,23 +106,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            // ログイン失敗の場合はHTML出力に進む
             break;
 
         case 'logout':
-            Session::logout(); // ログアウト処理
+            // ログアウトフォームからのPOSTリクエストにCSRFトークンチェックを追加することが推奨される
+            if (!Session::verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+                Session::set('flash_message', "<div class='alert alert-danger'>不正なリクエストです。ログアウトできませんでした。</div>");
+                $logger->error("CSRFトークン検証失敗: Logout");
+                header('Location: index.php?page=dashboard'); // ログアウト失敗時はダッシュボードに戻すなど
+                exit();
+            }
+            Session::logout();
             Session::set('flash_message', "<div class='alert alert-success'>ログアウトしました。</div>");
-            header('Location: index.php?page=home'); // ログアウト後にホームにリダイレクト
+            header('Location: index.php?page=home');
             exit();
             break;
 
-        // 他のページのPOST処理もここに追加していく (例: register, product_adminなど)
         case 'register':
-            // register.php の POST 処理をここに移動するか、
-            // 別ファイルに分離して require_once する
-            break;
+            if (!Session::verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+                Session::set('flash_message', "<div class='alert alert-danger'>不正なリクエストです。ページを再読み込みしてください。</div>");
+                $logger->error("CSRFトークン検証失敗: Register");
+                header('Location: index.php?page=register');
+                exit();
+            }
+            $reg_username = trim($_POST['username'] ?? '');
+            $reg_email = trim($_POST['email'] ?? '');
+            $reg_password = $_POST['password'] ?? '';
+            $reg_password_confirm = $_POST['password_confirm'] ?? '';
 
-        // ... その他の POST 処理 ...
+            if (empty($reg_username) || empty($reg_email) || empty($reg_password) || empty($reg_password_confirm)) {
+                Session::set('flash_message', "<div class='alert alert-danger'>すべてのフィールドを入力してください。</div>");
+            } elseif ($reg_password !== $reg_password_confirm) {
+                Session::set('flash_message', "<div class='alert alert-danger'>パスワードが一致しません。</div>");
+            } else {
+                try {
+                    // ユーザー名またはメールが既に存在するかチェック
+                    $stmt_check = $pdo->prepare("SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1");
+                    $stmt_check->execute([':username' => $reg_username, ':email' => $reg_email]);
+                    if ($stmt_check->fetch()) {
+                        Session::set('flash_message', "<div class='alert alert-danger'>そのユーザー名またはメールアドレスは既に登録されています。</div>");
+                    } else {
+                        $password_hash = password_hash($reg_password, PASSWORD_DEFAULT);
+                        $stmt_insert = $pdo->prepare("INSERT INTO users (username, email, password_hash, role) VALUES (:username, :email, :password_hash, 'user')");
+                        if ($stmt_insert->execute([':username' => $reg_username, ':email' => $reg_email, ':password_hash' => $password_hash])) {
+                            Session::set('flash_message', "<div class='alert alert-success'>登録が完了しました！ログインしてください。</div>");
+                            header('Location: index.php?page=login');
+                            exit();
+                        } else {
+                            Session::set('flash_message', "<div class='alert alert-danger'>登録に失敗しました。</div>");
+                            $logger->error("ユーザー登録データベースエラー: " . json_encode($stmt_insert->errorInfo()));
+                        }
+                    }
+                } catch (PDOException $e) {
+                    Session::set('flash_message', "<div class='alert alert-danger'>データベースエラーが発生しました: " . htmlspecialchars($e->getMessage()) . "</div>");
+                    error_log("Register DB error: " . $e->getMessage());
+                    $logger->error("ユーザー登録データベースエラー: " . $e->getMessage());
+                }
+            }
+            break;
     }
 }
 
@@ -142,8 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // アクセス権限チェックとリダイレクトもHTML出力前に行う
 // ====================================================================
 
-// 管理画面へのアクセスチェックとリダイレクト
-$protected_pages = ['users_admin', 'products_admin', 'dashboard', 'profile']; // 保護したい管理ページを追加
+$protected_pages = ['users_admin', 'products_admin', 'dashboard', 'profile'];
 
 if (in_array($currentPage, $protected_pages)) {
     if (!Session::isLoggedIn()) {
@@ -160,7 +188,7 @@ if (in_array($currentPage, $protected_pages)) {
 }
 
 
-// ページのタイトルを設定 (これはHTML出力なので、この位置で問題ありません)
+// ページのタイトルを設定
 $pageTitle = "Tiper Live";
 if ($currentPage === 'users_admin') {
     $pageTitle = "Tiper Live - ユーザー管理";
@@ -199,8 +227,7 @@ if ($currentPage === 'users_admin') {
     <div class="p-3 grid-main">
         <main id="main-content-area">
             <?php
-            // フラッシュメッセージの表示 (一回だけ表示して削除)
-            // POST処理がHTML出力前に完了しているため、ここで安全に表示できます
+            // フラッシュメッセージの表示
             if (Session::has('flash_message')) {
                 echo Session::get('flash_message');
                 Session::remove('flash_message');
@@ -208,11 +235,9 @@ if ($currentPage === 'users_admin') {
             ?>
 
             <?php
-            // $currentPage に基づいてメインコンテンツを読み込む
             $contentPath = '';
             switch ($currentPage) {
                 case 'login':
-                    // login.php はフォームの表示のみを行う（POST処理はindex.phpで行う）
                     $contentPath = __DIR__ . '/login.php';
                     break;
                 case 'register':
@@ -238,8 +263,7 @@ if ($currentPage === 'users_admin') {
                     break;
                 case 'home':
                 default:
-                    // 通常のホームページコンテンツ
-                    $contentPath = null; // デフォルトコンテンツを直接HTMLで記述するため
+                    $contentPath = null;
                     ?>
                     <nav aria-label="breadcrumb">
                         <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
@@ -284,7 +308,6 @@ if ($currentPage === 'users_admin') {
                     break;
             }
 
-            // コンテンツファイルをインクルード
             if ($contentPath && file_exists($contentPath)) {
                 include_once $contentPath;
             } elseif ($contentPath && !file_exists($contentPath)) {

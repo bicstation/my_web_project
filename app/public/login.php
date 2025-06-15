@@ -90,9 +90,10 @@ $csrfToken = Session::get('csrf_token');
                 // フラッシュメッセージは index.php で表示されるため、ここでは不要です。
                 // ただし、もし login.php が単独で直接アクセスされる可能性があるなら、
                 // ここで改めて取得して表示してもよいでしょう。
-                // if (!empty($message)): ?>
-                //     <?= $message ?>
-                // <?php //endif; ?>
+                // if (!empty($message)): 
+                //     <?= $message 
+                //  //endif; 
+                ?>
                 <form action="index.php?page=login" method="POST">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <div class="mb-3">
