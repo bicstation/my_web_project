@@ -23,6 +23,8 @@ services:
       - .:/var/www/html
     # ホストのユーザーIDとグループIDでPHPプロセスを実行
     # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
+      - ./php.ini:/usr/local/etc/php/conf.d/custom.ini
+    # ホストのユーザーIDとグループIDでPHPプロセスを実行
     user: "${CURRENT_UID}:${CURRENT_GID}" 
     environment:
       DB_HOST: ${DB_HOST}
