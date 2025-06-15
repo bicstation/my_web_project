@@ -19,7 +19,8 @@ class Logger
         // ログファイルのパスを絶対パスで設定
         // __DIR__ は現在のファイル (Logger.php) のディレクトリ (app/src/Core) を指す
         // '/../../../' で MY_WEB_PROJECT/app/ ディレクトリに移動し、そこにログファイルを置く
-        $this->logFile = __DIR__ . '/../../../app/' . $filename; 
+        // $this->logFile = __DIR__ . '/../../../app/' . $filename; 
+        $this->$logFile = __DIR__ . '/../../../app/storage/logs/main_app.log';
         
         // ログファイルのディレクトリが存在しない場合は作成
         $logDir = dirname($this->logFile);
