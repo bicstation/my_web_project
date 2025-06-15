@@ -21,11 +21,11 @@ services:
     build: ./php
     volumes:
       - .:/var/www/html
-    # ホストのユーザーIDとグループIDでPHPプロセスを実行
-    # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
+      # ホストのユーザーIDとグループIDでPHPプロセスを実行
+      # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
       - ./php.ini:/usr/local/etc/php/conf.d/custom.ini
     # ホストのユーザーIDとグループIDでPHPプロセスを実行
-    user: "${CURRENT_UID}:${CURRENT_GID}" 
+    user: "${CURRENT_UID}:${CURRENT_GID}"
     environment:
       DB_HOST: ${DB_HOST}
       DB_USER: tiper
@@ -43,12 +43,10 @@ services:
     container_name: my_web_project-mysql-1
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: tiper
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
-      WORDPRESS_DB_USER: tiper
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      # ここを修正します。WordPressが期待するDB名、ユーザー、パスワードを直接指定します。
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}       # .envのWORDPRESS_DB_NAMEを参照
+      MYSQL_USER: ${WORDPRESS_DB_USER}           # .envのWORDPRESS_DB_USERを参照
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}   # .envのWORDPRESS_DB_PASSWORDを参照
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
