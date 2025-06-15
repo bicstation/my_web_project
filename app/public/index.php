@@ -20,18 +20,19 @@ use App\Core\Session; // Sessionクラスをインポート
 
 // データベース接続設定を.envから取得
 $dbConfig = [
-    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
-    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
-    'user'    => $_ENV['DB_USER'] ?? 'root',
-    'pass'    => $_ENV['DB_PASS'] ?? 'password',
-    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+    'host'      => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'    => $_ENV['DB_NAME'] ?? 'web_project_db',
+    'user'      => $_ENV['DB_USER'] ?? 'root',
+    'pass'      => $_ENV['DB_PASS'] ?? 'password',
+    'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
 // ロガーとデータベース接続をグローバルで利用可能にする（sidebar.phpなどからアクセスするため）
 global $logger, $database, $pdo;
 try {
     $logger = new Logger('main_app.log'); // <-- Loggerクラスがロードされる
-    $logger->log("メインアプリケーション (index.php) へのアクセス処理を開始します。");
+    // 修正: log() メソッドを info() メソッドに変更
+    $logger->info("メインアプリケーション (index.php) へのアクセス処理を開始します。");
     $database = new Database($dbConfig, $logger);
     $pdo = $database->getConnection();
 } catch (Exception $e) {
