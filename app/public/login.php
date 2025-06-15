@@ -4,7 +4,6 @@
 // エラーレポートの設定
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
-// require_once ... (以下既存のコード)
 
 // init.php を読み込むことで、Composerのオートロード、セッション開始、環境変数のロードなどが行われます。
 // public/login.php から見て project_root/app/init.php へのパス
@@ -52,9 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $database = new Database($dbConfig, $logger);
                 $pdo = $database->getConnection();
 
-                // username または email でユーザーを検索
-                $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username OR email = :username LIMIT 1");
-                $stmt->execute([':username' => $username]);
+                // 修正点: username または email でユーザーを検索するSQLクエリのプレースホルダーを明確に分ける
+                // これにより、Invalid parameter number エラーを回避します。
+                $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username_param OR email = :email_param LIMIT 1");
+                $stmt->execute([
+                    ':username_param' => $username, // ユーザー名としてバインド
+                    ':email_param'    => $username  // メールアドレスとしてバインド
+                ]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($user && password_verify($password, $user['password_hash'])) {
