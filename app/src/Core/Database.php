@@ -1,94 +1,57 @@
 <?php
-// C:\project\my_web_project\app\src\Core\Database.php
+// C:\project\my_web_project\app\Core\Database.php
+
 namespace App\Core;
 
 use PDO;
 use PDOException;
+use Exception; // 基本的なExceptionクラスもuseしておく
 
+// データベース接続を管理するクラス
 class Database
 {
-    private PDO $pdo;
-    private array $config;
-    private ?Logger $logger; // オプションでLoggerを受け取る
+    private $host;
+    private $dbname;
+    private $user;
+    private $pass;
+    private $charset;
+    private $pdo; // PDOインスタンス
+    private $logger; // ロガーインスタンス
 
-    /**
-     * Database constructor.
-     * @param array $config データベース接続設定 (db_config.php の内容を連想配列で渡すことを想定)
-     * 例: ['host' => 'localhost', 'dbname' => 'mydb', 'user' => 'root', 'pass' => '']
-     * @param Logger|null $logger ロギングのためのLoggerインスタンス (任意)
-     */
-    public function __construct(array $config, ?Logger $logger = null)
+    public function __construct(array $config, Logger $logger)
     {
-        $this->config = $config;
-        $this->logger = $logger;
-        $this->connect();
+        $this->host = $config['host'];
+        $this->dbname = $config['dbname'];
+        $this->user = $config['user'];
+        $this->pass = $config['pass'];
+        $this->charset = $config['charset'];
+        $this->logger = $logger; // ロガーを受け取る
+
+        $this->connect(); // コンストラクタで接続を試みる
     }
 
-    /**
-     * データベースへの接続を確立します。
-     * 接続に失敗した場合はPDOExceptionをスローします。
-     */
-    private function connect(): void
+    private function connect()
     {
-        $host = $this->config['host'] ?? 'localhost';
-        $dbname = $this->config['dbname'] ?? 'web_project_db';
-        $user = $this->config['user'] ?? 'root';
-        $pass = $this->config['pass'] ?? 'password'; // デフォルトパスワードを設定
-        $charset = $this->config['charset'] ?? 'utf8mb4';
-
-        $dsn = "mysql:host={$host};dbname={$dbname};charset={$charset}";
+        $dsn = "mysql:host={$this->host};dbname={$this->dbname};charset={$this->charset}";
         $options = [
-            PDO::ATTR_ERRMODE           => PDO::ERRMODE_EXCEPTION, // エラーモードを例外に設定
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,     // デフォルトのフェッチモードを連想配列に設定
-            PDO::ATTR_EMULATE_PREPARES  => false,                // プリペアドステートメントのエミュレーションを無効にする (セキュリティとパフォーマンスのため)
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,   // エラー時に例外をスロー
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,         // デフォルトのフェッチモードを連想配列に設定
+            PDO::ATTR_EMULATE_PREPARES   => false,                    // ネイティブプリペアドステートメントを使用 (セキュリティとパフォーマンスのため)
         ];
 
         try {
-            $this->pdo = new PDO($dsn, $user, $pass, $options);
-            // 修正: log() メソッドを info() メソッドに変更
-            $this->logger?->info("データベース接続に成功しました。");
+            $this->pdo = new PDO($dsn, $this->user, $this->pass, $options);
+            $this->logger->info("データベースに正常に接続しました。"); // 接続成功ログ
         } catch (PDOException $e) {
-            $errorMessage = "データベース接続エラー: " . $e->getMessage();
-            $this->logger?->error($errorMessage);
-            // 接続エラーは致命的なので、例外を再スローします。
-            throw new PDOException($errorMessage, (int)$e->getCode());
+            $errorMsg = "データベース接続エラー: " . $e->getMessage();
+            $this->logger->error($errorMsg); // 接続失敗ログ
+            // 接続失敗は致命的なので、例外を再スローしてアプリケーションを停止させる
+            throw new Exception($errorMsg, (int)$e->getCode(), $e);
         }
     }
 
-    /**
-     * PDOインスタンスを返します。
-     * @return PDO
-     */
-    public function getConnection(): PDO
+    public function getConnection()
     {
-        return $this->pdo;
-    }
-
-    /**
-     * トランザクションを開始します。
-     * @return bool
-     */
-    public function beginTransaction(): bool
-    {
-        return $this->pdo->beginTransaction();
-    }
-
-    /**
-     * トランザクションをコミットします。
-     * @return bool
-     */
-    public function commit(): bool
-    {
-        return $this->pdo->commit();
-    }
-
-    /**
-     * トランザクションをロールバックします。
-     * @return bool
-     */
-    public function rollBack(): bool
-    {
-        return $this->pdo->rollBack();
+        return $this->pdo; // 確立されたPDO接続を返す
     }
 }
-

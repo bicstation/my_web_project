@@ -1,96 +1,42 @@
 <?php
+// C:\project\my_web_project\app\Core\Logger.php
 
 namespace App\Core;
 
+// アプリケーションのログ記録を行うクラス
 class Logger
 {
     private $logFile;
 
-    public function __construct(string $logFile)
+    public function __construct($filename = 'app.log')
     {
-        // Construct the log file path relative to the project root
-        // From app/Core/Logger.php to project_root/logs/
-        $this->logFile = __DIR__ . '/../../logs/' . $logFile;
-
-        // Create the log directory if it doesn't exist
-        $logDir = dirname($this->logFile);
-        if (!is_dir($logDir)) {
-            if (!mkdir($logDir, 0777, true)) {
-                // Handle error if directory creation fails
-                // For example, throw an exception or log to PHP's error log
-                error_log("Failed to create log directory: " . $logDir);
-            }
+        $this->logFile = __DIR__ . '/../../logs/' . $filename; // logsディレクトリにログファイルを作成
+        // ログディレクトリが存在しない場合は作成
+        if (!is_dir(dirname($this->logFile))) {
+            mkdir(dirname($this->logFile), 0777, true); // 0777は開発用。本番ではより厳格なパーミッションを推奨
         }
     }
 
-    /**
-     * Writes a log message to the log file.
-     *
-     * @param string $level The log level (e.g., INFO, WARNING, ERROR).
-     * @param string $message The log message.
-     * @return void
-     */
-    private function writeLog(string $level, string $message): void
+    private function writeLog($level, $message)
     {
-        $timestamp = date('Y-m-d H:i:s');
-        $logEntry = "[{$timestamp}] [{$level}] {$message}" . PHP_EOL;
-        // Append the log entry to the log file
-        file_put_contents($this->logFile, $logEntry, FILE_APPEND);
+        $timestamp = date('Y-m-d H:i:s'); // 現在のタイムスタンプ
+        $logEntry = sprintf("[%s] [%s] %s\n", $timestamp, strtoupper($level), $message); // ログエントリのフォーマット
+        // FILE_APPEND: ファイルの終わりに書き込む, LOCK_EX: 排他ロックで他のプロセスからの同時書き込みを防ぐ
+        file_put_contents($this->logFile, $logEntry, FILE_APPEND | LOCK_EX);
     }
 
-    /**
-     * Logs an informational message.
-     *
-     * @param string $message The message to log.
-     * @return void
-     */
-    public function info(string $message): void
+    public function info($message)
     {
-        $this->writeLog('INFO', $message);
+        $this->writeLog('info', $message);
     }
 
-    /**
-     * Logs a warning message.
-     * This method was likely missing or incorrectly defined, causing the VS Code error.
-     *
-     * @param string $message The message to log.
-     * @return void
-     */
-    public function warning(string $message): void
+    public function warning($message)
     {
-        $this->writeLog('WARNING', $message);
+        $this->writeLog('warning', $message);
     }
 
-    /**
-     * Logs an error message.
-     *
-     * @param string $message The message to log.
-     * @return void
-     */
-    public function error(string $message): void
+    public function error($message)
     {
-        $this->writeLog('ERROR', $message);
-    }
-
-    /**
-     * Logs an error message using a static context.
-     * This can be used if an instance of Logger is not available.
-     *
-     * @param string $message The message to log.
-     * @param string $logFile The name of the log file (e.g., 'application.log').
-     * @return void
-     */
-    public static function staticError(string $message, string $logFile = 'application.log'): void
-    {
-        $timestamp = date('Y-m-d H:i:s');
-        $logEntry = "[{$timestamp}] [ERROR] {$message}" . PHP_EOL;
-        $filePath = __DIR__ . '/../../logs/' . $logFile;
-        $logDir = dirname($filePath);
-        if (!is_dir($logDir)) {
-            if (!mkdir($logDir, 0777, true)) {
-                error_log("Failed to create static log directory: " . $logDir);
-            }
-        }
-        file_put_contents($filePath, $logEntry, FILE_APPEND);
+        $this->writeLog('error', $message);
     }
 }
