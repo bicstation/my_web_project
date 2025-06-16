@@ -39,6 +39,21 @@ $dbConfig = [
     'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
+
+// デバッグ用: .env ファイルが正しく読み込まれているか確認
+// 環境変数が出力されるため、本番環境では絶対に残さないでください
+echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
+echo "<pre>_ENV array: ";
+print_r($_ENV);
+echo "</pre>";
+// die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
+
+
+
+
 // ロガーとデータベース接続をグローバルで利用可能にする
 global $logger, $database, $pdo;
 try {
