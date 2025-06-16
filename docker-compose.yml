@@ -31,9 +31,10 @@ services:
       DB_USER: tiper
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
-      DB_PASS: ${DB_PASSWORD}
+      DB_PASS: ${DB_PASSWORD} # アプリケーションコードでどちらを参照しているか確認し、不要ならDB_PASSWORDを残して削除しても良い
       DUGA_API_KEY: ${DUGA_API_KEY}
       DUGA_API_URL: ${DUGA_API_URL}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD} # ★ここを追加しました
       TZ: Asia/Tokyo
     networks:
       - app-network
@@ -44,9 +45,9 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       # ここを修正します。WordPressが期待するDB名、ユーザー、パスワードを直接指定します。
-      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}       # .envのWORDPRESS_DB_NAMEを参照
-      MYSQL_USER: ${WORDPRESS_DB_USER}           # .envのWORDPRESS_DB_USERを参照
-      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}   # .envのWORDPRESS_DB_PASSWORDを参照
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}      # .envのWORDPRESS_DB_NAMEを参照
+      MYSQL_USER: ${WORDPRESS_DB_USER}          # .envのWORDPRESS_DB_USERを参照
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}  # .envのWORDPRESS_DB_PASSWORDを参照
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql

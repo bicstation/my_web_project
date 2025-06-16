@@ -29,7 +29,7 @@ use App\Core\Database;
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
 // init.php 内で Composer のオートローダーを読み込んだり、.env をロードしたりする必要はなくなります。
-require_once __DIR__ . '/init.php';
+// require_once __DIR__ . '/init.php';
 
 // データベース接続設定を.envから取得
 $dbConfig = [
