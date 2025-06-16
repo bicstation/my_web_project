@@ -1,26 +1,12 @@
 <?php
 // C:\project\my_web_project\app\public\index.php
 
-// デバッグ用: .env ファイルが正しく読み込まれているか確認
-
 // エラーレポート設定 (開発中はこれらを有効にするのがベスト)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 // Composerのオートローダーを読み込む - これは常にファイルの早い段階で必要です
 require_once __DIR__ . '/../../vendor/autoload.php';
-
-// 環境変数が出力されるため、本番環境では絶対に残さないでください
-echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
-echo "<pre>_ENV array: ";
-print_r($_ENV);
-echo "</pre>";
-// die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
-
-
 
 // 名前空間を使用するクラスをインポート
 // Composerのオートロード設定により、これらのクラスが自動的に読み込まれます
@@ -29,6 +15,7 @@ use App\Core\Database;
 use App\Core\Session; // App\Core\Session クラスをインポート
 
 // === init.php から移動したセッション初期化ロジック ===
+// !!! ここが重要: 全てのecho文やHTML出力より前にセッションを開始する !!!
 if (session_status() == PHP_SESSION_NONE) {
     session_set_cookie_params([
         'lifetime' => 3600, // 1時間
@@ -43,6 +30,17 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 // === セッション初期化ロジックここまで ===
 
+// デバッグ用: .env ファイルが正しく読み込まれているか確認
+// !!! デバッグ出力はセッション開始後に移動するか、開発環境でのみ使用し、本番では削除/コメントアウトする !!!
+echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
+echo "<pre>_ENV array: ";
+print_r($_ENV);
+echo "</pre>";
+// die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
+
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -52,10 +50,6 @@ $dbConfig = [
     'pass'      => $_ENV['DB_PASS'] ?? 'password',
     'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
-
-
-
-
 
 
 // ロガーとデータベース接続をグローバルで利用可能にする
@@ -404,7 +398,6 @@ if ($currentPage === 'users_admin') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($pageTitle); ?></title>
-    <!-- 既存のインクルードファイルを維持 -->
     <?php include_once __DIR__ . '/../includes/head.php'; ?>
 </head>
 
@@ -502,11 +495,9 @@ if ($currentPage === 'users_admin') {
                 include_once __DIR__ . '/404.php';
             }
             ?>
-        </main><!-- #main-content-area -->
-        <?php include_once __DIR__ . '/../includes/footer.php'; ?>
+        </main><?php include_once __DIR__ . '/../includes/footer.php'; ?>
     </div>
     <?php include_once __DIR__ . '/../includes/scripts.php'; ?>
 </body>
 
 </html>
-
