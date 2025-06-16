@@ -14,4 +14,4 @@
 .vscode/
 .DS_Store
 *.sqlite
-*.db
+*.db/app/storage/
