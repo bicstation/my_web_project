@@ -22,6 +22,7 @@ services:
     volumes:
       - .:/var/www/html
       # ホストのユーザーIDとグループIDでPHPプロセスを実行
+      - ./logs:/var/www/html/logs
       # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
       - ./php.ini:/usr/local/etc/php/conf.d/custom.ini
     # ホストのユーザーIDとグループIDでPHPプロセスを実行
