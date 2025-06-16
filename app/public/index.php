@@ -1,12 +1,26 @@
 <?php
 // C:\project\my_web_project\app\public\index.php
 
+// デバッグ用: .env ファイルが正しく読み込まれているか確認
+
 // エラーレポート設定 (開発中はこれらを有効にするのがベスト)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 // Composerのオートローダーを読み込む - これは常にファイルの早い段階で必要です
 require_once __DIR__ . '/../../vendor/autoload.php';
+
+// 環境変数が出力されるため、本番環境では絶対に残さないでください
+echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
+echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
+echo "<pre>_ENV array: ";
+print_r($_ENV);
+echo "</pre>";
+// die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
+
+
 
 // 名前空間を使用するクラスをインポート
 // Composerのオートロード設定により、これらのクラスが自動的に読み込まれます
@@ -40,16 +54,6 @@ $dbConfig = [
 ];
 
 
-// デバッグ用: .env ファイルが正しく読み込まれているか確認
-// 環境変数が出力されるため、本番環境では絶対に残さないでください
-echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
-echo "<pre>_ENV array: ";
-print_r($_ENV);
-echo "</pre>";
-// die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
 
 
 
