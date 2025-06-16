@@ -10,10 +10,14 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - /etc/letsencrypt:/etc/letsencrypt:ro # ★追加: Certbot証明書を読み取り専用でマウント
     depends_on:
-      - php
-      - mysql
-      - phpmyadmin
-      - blog_wordpress_service
+      php:
+        condition: service_healthy # PHPサービスが健全な状態になるまで待機
+      mysql:
+        condition: service_healthy # MySQLサービスが健全な状態になるまで待機 (念のため直接依存も追加)
+      phpmyadmin:
+        condition: service_started # phpmyadminは起動していればOK
+      blog_wordpress_service:
+        condition: service_started # WordPressも起動していればOK
     networks:
       - app-network
 
@@ -25,8 +29,7 @@ services:
       - ./logs:/var/www/html/logs
       # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
       - ./php.ini:/usr/local/etc/php/php.ini # ★この行に修正！★
-      #- ./php.ini:/usr/local/etc/php/php.ini # ★この行を修正します！
-    # ホストのユーザーIDとグループIDでPHPプロセスを実行
+      # ホストのユーザーIDとグループIDでPHPプロセスを実行
     user: "${CURRENT_UID}:${CURRENT_GID}"
     environment:
       DB_HOST: ${DB_HOST}
@@ -40,24 +43,38 @@ services:
       TZ: Asia/Tokyo
     networks:
       - app-network
+    depends_on: # PHPがMySQLに依存するように変更
+      mysql:
+        condition: service_healthy # MySQLが完全に準備できるまで待機
+    healthcheck: # PHP-FPMが正常に動作しているかチェック
+      test: ["CMD", "php", "-m"] # php-fpmが起動していることを確認する簡易的なテスト
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mysql:
     image: mysql:8.0
     container_name: my_web_project-mysql-1
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # ここを修正します。WordPressが期待するDB名、ユーザー、パスワードを直接指定します。
-      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}      # .envのWORDPRESS_DB_NAMEを参照
-      MYSQL_USER: ${WORDPRESS_DB_USER}          # .envのWORDPRESS_DB_USERを参照
-      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}  # .envのWORDPRESS_DB_PASSWORDを参照
+      # ここを修正します。Tiper.Liveアプリケーションが期待するDB名、ユーザー、パスワードを直接指定します。
+      MYSQL_DATABASE: ${DB_NAME}         # Tiper.LiveアプリのDB名を参照
+      MYSQL_USER: ${DB_USER}             # Tiper.Liveアプリのユーザー名を参照
+      MYSQL_PASSWORD: ${DB_PASSWORD}     # Tiper.Liveアプリのパスワードを参照
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./app/database:/db_scripts
+      - ./app/database:/docker-entrypoint-initdb.d # ★修正: MySQL起動時にSQLスクリプトを実行する標準パス
     ports:
       - "3306:3306"
     networks:
       - app-network
+    healthcheck: # ★ここを追加: MySQLが接続可能かチェック
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s # 初回起動時にMySQLが立ち上がるまでの猶予期間
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -68,7 +85,8 @@ services:
     ports:
       - "8080:80"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy # phpmyadminもMySQLの健全性を待機
     networks:
       - app-network
 
@@ -78,14 +96,15 @@ services:
     environment:
       WORDPRESS_DB_HOST: mysql:3306
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
-      WORDPRESS_DB_USER: tiper
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER} # WordPressのDBユーザーを参照
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # WordPressのDBパスワードを参照
       WORDPRESS_DEBUG: 1
       TZ: Asia/Tokyo
     volumes:
       - ./wordpress_blog:/var/www/html
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy # WordPressもMySQLの健全性を待機
     networks:
       - app-network
 
