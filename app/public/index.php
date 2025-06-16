@@ -41,6 +41,11 @@ if (session_status() == PHP_SESSION_NONE) {
 // echo "</pre>";
 // die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
 
+// 
+
+// 
+// 
+// 
 
 // データベース接続設定を.envから取得
 $dbConfig = [
