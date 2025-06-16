@@ -35,8 +35,6 @@ try {
 }
 
 ?>
-<!-- Tailwind CSS を CDN で読み込み (index.php が読み込んでいない場合のため) -->
-<!-- もし index.php の head.php で既に Tailwind が読み込まれていれば、この script タグは削除しても構いません -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>

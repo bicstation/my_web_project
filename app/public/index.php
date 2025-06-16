@@ -41,11 +41,6 @@ if (session_status() == PHP_SESSION_NONE) {
 // echo "</pre>";
 // die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
 
-// 
-
-// 
-// 
-// 
 
 // データベース接続設定を.envから取得
 $dbConfig = [
@@ -93,7 +88,7 @@ if (Session::isLoggedIn()) {
 
 // URLのクエリパラメータ 'page' を取得、またはホスト名に基づいてページを決定
 $currentPage = $_GET['page'] ?? 'home';
-$isDugaDomain = ($_SERVER['HTTP_HOST'] === 'duga.tipers.live');
+$isDugaDomain = ($_SERVER['HTTP_HOST'] === 'duga.tiper.live'); // <-- ここを 'duga.tiper.live' に修正しました
 
 if ($isDugaDomain) {
     if (isset($_GET['page'])) {
