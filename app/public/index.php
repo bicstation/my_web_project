@@ -32,13 +32,13 @@ if (session_status() == PHP_SESSION_NONE) {
 
 // デバッグ用: .env ファイルが正しく読み込まれているか確認
 // !!! デバッグ出力はセッション開始後に移動するか、開発環境でのみ使用し、本番では削除/コメントアウトする !!!
-echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
-echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
-echo "<pre>_ENV array: ";
-print_r($_ENV);
-echo "</pre>";
+// echo "<pre>DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NOT SET') . "</pre>";
+// echo "<pre>DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NOT SET') . "</pre>";
+// echo "<pre>DB_USER: " . ($_ENV['DB_USER'] ?? 'NOT SET') . "</pre>";
+// echo "<pre>DB_PASS: " . ($_ENV['DB_PASS'] ?? 'NOT SET') . "</pre>";
+// echo "<pre>_ENV array: ";
+// print_r($_ENV);
+// echo "</pre>";
 // die("Environment variable check complete."); // これで処理を停止し、出力だけを確認
 
 
