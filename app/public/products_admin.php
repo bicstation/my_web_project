@@ -20,7 +20,7 @@ use App\Util\DbBatchInsert; // 必要に応じてDbBatchInsertもインポート
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
 // init.php 内で Composer のオートローダーを読み込んだり、.env をロードしたりする必要はなくなります。
 // init.php は主にセッション開始、認証チェックなどの初期化処理に専念します。
-require_once __DIR__ . '/init.php';
+// require_once __DIR__ . '/init.php';
 
 // データベース接続設定を.envから取得
 $dbConfig = [
