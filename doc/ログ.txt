@@ -1,0 +1,1 @@
+cat app/logs/duga_api_processing.log
