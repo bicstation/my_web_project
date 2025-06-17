@@ -13,7 +13,7 @@ use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert;
-use PDOException; // PDOExceptionはグローバル名前空間にあるが、明示的にuseしても問題ない
+// use PDOException; // PDOExceptionはグローバル名前空間にあるが、明示的にuseしても問題ない
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
