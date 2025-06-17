@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   nginx:
     build: ./nginx
@@ -6,9 +8,13 @@ services:
       - "80:80"
       - "443:443" # HTTPSポートも公開
     volumes:
-      - .:/var/www/html # プロジェクトルート全体をコンテナの /var/www/html にマウント
+      # プロジェクトルート全体ではなく、publicディレクトリをWebルートとしてマウントすることを推奨します。
+      # アプリケーションの公開ディレクトリがどこにあるかによります。
+      # 例: アプリケーションのWeb公開ディレクトリが app/public の場合
+      - ./app/public:/var/www/html # ★修正: アプリケーションの公開ディレクトリをNginxのWebルートにマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
-      - /etc/letsencrypt:/etc/letsencrypt:ro # ★追加: Certbot証明書を読み取り専用でマウント
+      - /etc/letsencrypt:/etc/letsencrypt:ro # Certbot証明書を読み取り専用でマウント
+      - ./storage/logs:/var/log/nginx # ★追加: Nginxのログをホストのstorage/logsにマウント
     depends_on:
       php:
         condition: service_healthy # PHPサービスが健全な状態になるまで待機
@@ -24,26 +30,28 @@ services:
   php:
     build: ./php
     volumes:
-      - .:/var/www/html
+      # アプリケーションコードのルートをコンテナの /var/www/html にマウント
+      # あなたのアプリケーションコードがプロジェクトルート直下にある場合は .:/var/www/html のままでも動作しますが、
+      # appディレクトリにメインコードがあるなら ./app:/var/www/html がより適切です。
+      - .:/var/www/html # ★そのまま。もしappディレクトリにコードがあるなら ./app:/var/www/html に変更検討
       # ホストのユーザーIDとグループIDでPHPプロセスを実行
-      - ./logs:/var/www/html/logs
-      # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
-      - ./php.ini:/usr/local/etc/php/php.ini # ★この行に修正！★
-      # ホストのユーザーIDとグループIDでPHPプロセスを実行
+      - ./storage/logs:/var/www/html/storage/logs # ★修正: ホストのstorage/logsをコンテナにマウント
+      - ./php.ini:/usr/local/etc/php/php.ini # php.iniファイルをコンテナにマウント
+    # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
     user: "${CURRENT_UID}:${CURRENT_GID}"
     environment:
       DB_HOST: ${DB_HOST}
-      DB_USER: tiper
+      DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
-      DB_PASS: ${DB_PASSWORD} # アプリケーションコードでどちらを参照しているか確認し、不要ならDB_PASSWORDを残して削除しても良い
+      # DB_PASS: ${DB_PASSWORD} # ★確認: アプリケーションコードでどちらを参照しているか確認し、不要なら削除
       DUGA_API_KEY: ${DUGA_API_KEY}
       DUGA_API_URL: ${DUGA_API_URL}
-      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD} # ★ここを追加しました
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD}
       TZ: Asia/Tokyo
     networks:
       - app-network
-    depends_on: # PHPがMySQLに依存するように変更
+    depends_on:
       mysql:
         condition: service_healthy # MySQLが完全に準備できるまで待機
     healthcheck: # PHP-FPMが正常に動作しているかチェック
@@ -57,19 +65,18 @@ services:
     container_name: my_web_project-mysql-1
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # ここを修正します。Tiper.Liveアプリケーションが期待するDB名、ユーザー、パスワードを直接指定します。
-      MYSQL_DATABASE: ${DB_NAME}         # Tiper.LiveアプリのDB名を参照
-      MYSQL_USER: ${DB_USER}             # Tiper.Liveアプリのユーザー名を参照
-      MYSQL_PASSWORD: ${DB_PASSWORD}     # Tiper.Liveアプリのパスワードを参照
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./app/database:/docker-entrypoint-initdb.d # ★修正: MySQL起動時にSQLスクリプトを実行する標準パス
+      - ./app/database:/docker-entrypoint-initdb.d # MySQL起動時にSQLスクリプトを実行する標準パス
     ports:
       - "3306:3306"
     networks:
       - app-network
-    healthcheck: # ★ここを追加: MySQLが接続可能かチェック
+    healthcheck: # MySQLが接続可能かチェック
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
@@ -96,8 +103,8 @@ services:
     environment:
       WORDPRESS_DB_HOST: mysql:3306
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
-      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER} # WordPressのDBユーザーを参照
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD} # WordPressのDBパスワードを参照
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
       WORDPRESS_DEBUG: 1
       TZ: Asia/Tokyo
     volumes:
