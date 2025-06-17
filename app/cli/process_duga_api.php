@@ -1,45 +1,35 @@
 <?php
 // C:\project\my_web_project\app\cli\process_duga_api.php
 
+
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+// これが出力されるかどうかが非常に重要です。
+// もしこれすら出力されないなら、PHPの実行環境自体に問題があります。
+error_log("--- スクリプト実行開始（強制エラー表示ON） ---", 4); // 4 はSAPIログ（CLIならstderr）に出力
+// または直接コンソールに出力
 echo "--- スクリプト実行開始（強制エラー表示ON） ---\n";
 
 // Composerのオートローダーを読み込む
 require_once __DIR__ . '/../../vendor/autoload.php';
 
-echo "--- オートローダー読み込み成功 ---\n"; // ★ここまで表示されることを確認済み
-
-// --- ここから追加デバッグ ---
-echo "--- Dotenvロード開始前 ---\n";
-try {
-    // Dotenvライブラリを使って.envファイルをロード
-    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
-    $dotenv->load();
-    echo "--- Dotenvロード成功 ---\n";
-} catch (Throwable $e) {
-    echo "--- Dotenvロード失敗: " . $e->getMessage() . "\n";
-    error_log("Dotenvロード失敗 (エラーログ): " . $e->getMessage());
-    die("Dotenvエラーで終了。\n");
-}
-echo "--- Dotenvロード後、クラスuse文の直前 ---\n";
+// Dotenvライブラリを使って.envファイルをロード
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv->load();
 
 // 名前空間を使用するクラスをインポート
 use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert;
-// use PDOException; // PDOExceptionはグローバル名前空間にあるが、明示的にuseしても問題ない
-
-echo "--- クラスuse文の直後、CLIチェック前 ---\n";
+use PDOException; // PDOExceptionはグローバル名前空間にあるが、明示的にuseしても問題ない
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
     die("このスクリプトはWebブラウザからではなく、CLI (コマンドライン) から実行してください。\n");
 }
-echo "--- CLIチェック通過 ---\n";
 
 // -----------------------------------------------------
 // 定義: 設定値とデフォルト値 (大部分は.envから取得される)
@@ -76,25 +66,15 @@ $dugaApiClient = null;
 $dbBatchInserter = null;
 
 try {
-    echo "--- Loggerインスタンス化前 ---\n"; // ★
     $logger = new Logger('duga_api_processing.log');
-    echo "--- Loggerインスタンス化成功 ---\n"; // ★
     $logger->log("Duga APIからのデータ取得とデータベース保存処理を開始します。");
-    echo "--- Logger初期ログ書き込み成功 ---\n"; // ★
 
-    echo "--- Databaseインスタンス化前 ---\n"; // ★
     $database = new Database($dbConfig, $logger);
-    echo "--- Databaseインスタンス化成功 ---\n"; // ★
     $pdo = $database->getConnection(); // PDOインスタンスを取得
-    echo "--- DB接続成功 ---\n"; // ★
 
-    echo "--- DugaApiClientインスタンス化前 ---\n"; // ★
     $dugaApiClient = new DugaApiClient($dugaApiUrl, $dugaApiKey, $logger);
-    echo "--- DugaApiClientインスタンス化成功 ---\n"; // ★
 
-    echo "--- DbBatchInsertインスタンス化前 ---\n"; // ★
     $dbBatchInserter = new DbBatchInsert($database, $logger);
-    echo "--- DbBatchInsertインスタンス化成功 ---\n"; // ★
 
 } catch (Exception $e) {
     error_log("CLI初期設定エラー: " . $e->getMessage());
@@ -103,8 +83,6 @@ try {
     }
     die("エラー: CLIスクリプトの初期設定中に問題が発生しました。詳細はサーバログを確認してください。\n");
 }
-echo "--- 全初期設定完了 ---\n"; // ★
-// --- ここまで追加デバッグ ---
 
 // -----------------------------------------------------
 // コマンドライン引数のパース
@@ -378,8 +356,8 @@ try {
                 'jacket_url_small'    => $extractImageUrl($api_record['jacketimage'] ?? [], 'small'),
                 'jacket_url_medium'   => $extractImageUrl($api_record['jacketimage'] ?? [], 'midium'),
                 'jacket_url_large'    => $extractImageUrl($api_record['jacketimage'] ?? [], 'large'),
-                'sample_movie_url'    => ($api_record['samplemovie'][0]['data']['movie'] ?? null), // samplemovieはさらにネスト
-                'sample_movie_capture_url' => ($api_record['samplemovie'][0]['data']['capture'] ?? null),
+                'sample_movie_url'    => $extractImageUrl($api_record['samplemovie'] ?? [], 'midium')['movie'] ?? null, // samplemovieはさらにネスト
+                'sample_movie_capture_url' => $extractImageUrl($api_record['samplemovie'] ?? [], 'midium')['capture'] ?? null,
                 'source_api'          => API_SOURCE_NAME,
                 'created_at'          => date('Y-m-d H:i:s'),
                 'updated_at'          => date('Y-m-d H:i:s')
@@ -443,9 +421,8 @@ try {
 
             // labels
             if (isset($api_record['label']) && is_array($api_record['label'])) {
-                foreach ($api_record['label'] as $label_data_wrapper) {
-                    $label_detail = $label_data_wrapper['data'] ?? null;
-                    if ($label_detail && isset($label_detail['id']) && isset($label_detail['name'])) {
+                foreach ($api_record['label'] as $label_detail) {
+                    if (isset($label_detail['id']) && isset($label_detail['name'])) {
                         $label_name = trim($label_detail['name']);
                         $label_duga_id = trim($label_detail['id']);
                         if (!empty($label_name) && !empty($label_duga_id)) {
@@ -489,9 +466,8 @@ try {
 
             // series
             if (isset($api_record['series']) && is_array($api_record['series'])) {
-                foreach ($api_record['series'] as $series_data_wrapper) {
-                    $series_detail = $series_data_wrapper['data'] ?? null;
-                    if ($series_detail && isset($series_detail['id']) && isset($series_detail['name'])) {
+                foreach ($api_record['series'] as $series_detail) {
+                    if (isset($series_detail['id']) && isset($series_detail['name'])) {
                         $series_name = trim($series_detail['name']);
                         $series_duga_id = trim($series_detail['id']);
                         if (!empty($series_name) && !empty($series_duga_id)) {
@@ -705,51 +681,53 @@ try {
                     $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
                 }
 
-                // 全て成功したらコミット
+                // すべて成功したらコミット
                 $pdo->commit();
-                $logger->log("データベースへのバッチUPSERTが正常に完了しました。");
-
-                // バッファをクリア
-                $raw_data_buffer = [];
-                $products_buffer_temp = [];
-                $categories_buffer = [];
-                $genres_buffer = [];
-                $labels_buffer = [];
-                $directors_buffer = [];
-                $series_buffer = [];
-                $actors_buffer = [];
-                $product_categories_buffer = [];
-                $product_genres_buffer = [];
-                $product_labels_buffer = [];
-                $product_directors_buffer = [];
-                $product_series_buffer = [];
-                $product_actors_buffer = [];
-
-            } catch (Exception $e) {
+                $logger->log("現在のバッチのデータベーストランザクションをコミットしました。");
+                
+            } catch (PDOException $e) {
+                // エラーが発生したらロールバック
                 $pdo->rollBack();
-                $logger->error("データベース処理中にエラーが発生しました。トランザクションはロールバックされました: " . $e->getMessage());
-                // エラーが発生した場合も、次のAPIコールに進むか、完全に停止するかは要件による
-                // 今回は致命的エラーとして処理を停止
-                die("エラー: データベース処理中に問題が発生しました。詳細はログを確認してください。\n");
+                $logger->error("データベース処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+                // 例外を再スローして、外側のtry-catchブロックでキャッチさせる
+                throw $e; 
             }
+
+            // バッファをクリア
+            $raw_data_buffer = [];
+            $products_buffer_temp = [];
+            $categories_buffer = [];
+            $genres_buffer = [];
+            $labels_buffer = [];
+            $directors_buffer = [];
+            $series_buffer = [];
+            $actors_buffer = [];
+            $product_categories_buffer = [];
+            $product_genres_buffer = [];
+            $product_labels_buffer = [];
+            $product_directors_buffer = [];
+            $product_series_buffer = [];
+            $product_actors_buffer = [];
         }
 
         $total_processed_records += count($api_data_batch);
         $current_offset++; // 次のオフセットへ
         
-        // 短いインターバル (任意) - APIリクエスト頻度制限に対応
-        // usleep(50000); // 50ミリ秒待機 (50,000マイクロ秒)
-    } // whileループ終了
+        // API呼び出しの間隔を調整する (オプション)
+        // usleep(500000); // 500ミリ秒待機 (API制限を考慮)
 
-    // ループ終了後、残っているバッファがあれば最終処理
+    } // while ($total_processed_records < $total_api_results) 終了
+
+    // ループ終了後、残りのバッファがあれば処理
     if (!empty($raw_data_buffer)) {
-        $logger->log("残りのバッファデータをデータベースにUPSERTします。");
+        $logger->log("残りのバッファデータを処理中...");
         $pdo->beginTransaction();
         try {
+            // raw_api_data テーブルへのUPSERT
             $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
             $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
-            $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
 
+            // products_buffer_temp に raw_api_data_id を紐付け、products テーブルへのUPSERTを準備
             $final_products_for_upsert = [];
             foreach ($products_buffer_temp as $api_id => $product_data) {
                 $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
@@ -761,22 +739,22 @@ try {
                 }
             }
 
+            // products テーブルへのUPSERT
             $products_upsert_columns = [
                 'title', 'original_title', 'caption', 'release_date', 'maker_name', 'itemno', 'price', 'volume',
                 'url', 'affiliate_url', 'image_url_small', 'image_url_medium', 'image_url_large',
                 'jacket_url_small', 'jacket_url_medium', 'jacket_url_large',
                 'sample_movie_url', 'sample_movie_capture_url', 'source_api', 'raw_api_data_id', 'updated_at'
             ];
-            
             if (!empty($final_products_for_upsert)) {
                 $dbBatchInserter->insertOrUpdate('products', $final_products_for_upsert, $products_upsert_columns);
-                $logger->log(count($final_products_for_upsert) . "件の商品データを 'products' にUPSERTしました。");
+                $logger->log(count($final_products_for_upsert) . "件の残りの商品データを 'products' にUPSERTしました。");
             } else {
-                $logger->log("products テーブルにUPSERTするデータがありませんでした。");
+                $logger->log("残りのproducts テーブルにUPSERTするデータがありませんでした。");
             }
 
-            // 分類データテーブルの処理（残りのバッファ分）
-            $category_map = [];
+            // 分類テーブルの処理
+            $category_map = []; 
             foreach ($categories_buffer as $duga_id => $data) {
                 $db_id = processClassificationData($dbBatchInserter, $logger, 'categories', $data);
                 if ($db_id !== null) {
@@ -784,7 +762,7 @@ try {
                 }
             }
             
-            $genre_map = [];
+            $genre_map = []; 
             foreach ($genres_buffer as $duga_id => $data) {
                 $db_id = processClassificationData($dbBatchInserter, $logger, 'genres', $data);
                 if ($db_id !== null) {
@@ -824,7 +802,7 @@ try {
                 }
             }
 
-            // 中間テーブルの処理（残りのバッファ分）
+            // 中間テーブルへのUPSERT
             $final_product_categories = [];
             foreach ($product_categories_buffer as $entry) {
                 if (isset($category_map[$entry['category_duga_id']])) {
@@ -902,26 +880,25 @@ try {
             if (!empty($final_product_actors)) {
                 $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
             }
-
             $pdo->commit();
-            $logger->log("残りのバッファデータが正常にデータベースにUPSERTされました。");
+            $logger->log("残りのバッファデータのデータベーストランザクションをコミットしました。");
 
-        } catch (Exception $e) {
+        } catch (PDOException $e) {
             $pdo->rollBack();
-            $logger->error("最終バッファ処理中にエラーが発生しました。トランザクションはロールバックされました: " . $e->getMessage());
-            die("エラー: 最終データベース処理中に問題が発生しました。詳細はログを確認してください。\n");
+            $logger->error("残りのバッファデータ処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
         }
     }
 
-    $logger->log("Duga APIからの全データ取得とデータベース保存処理が完了しました。総処理レコード数: {$total_processed_records}");
+    $logger->log("Duga APIからのデータ取得とデータベース保存処理が完了しました。総処理レコード数: {$total_processed_records}件");
+    echo "Duga APIからのデータ取得とデータベース保存処理が完了しました。\n";
 
 } catch (Exception $e) {
-    // スクリプト全体の捕捉されない例外
-    error_log("Duga APIスクリプト実行中に予期せぬ致命的なエラーが発生しました: " . $e->getMessage());
-    if ($logger) {
-        $logger->error("Duga APIスクリプト実行中に予期せぬ致命的なエラーが発生しました: " . $e->getMessage());
-    }
-    die("エラー: スクリプト実行中に致命的な問題が発生しました。詳細はログを確認してください。\n");
+    // API呼び出しまたはデータ処理中の一般的なエラー
+    $logger->error("主要処理ループ中に致命的なエラーが発生しました: " . $e->getMessage());
+    echo "エラー: 主要処理中に問題が発生しました。詳細はログを確認してください。\n";
+} finally {
+    // PDO接続を閉じる (PDOはスクリプト終了時に自動的に閉じられるが、明示的に閉じることも可能)
+    // $database->closeConnection(); // DatabaseクラスにcloseConnectionメソッドがある場合
+    $logger->log("スクリプト実行終了。");
+    echo "--- スクリプト実行終了 ---\n";
 }
-
-?>
