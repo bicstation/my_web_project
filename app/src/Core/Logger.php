@@ -1,46 +1,56 @@
 <?php
-// C:\project\my_web_project\app\Core\Logger.php
+// app/src/Core/Logger.php
 
 namespace App\Core;
 
-// アプリケーションのログ記録を行うクラス
 class Logger
 {
     private $logFile;
+    private $logLevel;
 
-    public function __construct($filename = 'app.log')
+    public function __construct(string $logFilePath, string $logLevel = 'info')
     {
-        $this->logFile = __DIR__ . '/../../logs/' . $filename; // logsディレクトリにログファイルを作成
-        // ログディレクトリが存在しない場合は作成
-        if (!is_dir(dirname($this->logFile))) {
-            mkdir(dirname($this->logFile), 0777, true); // 0777は開発用。本番ではより厳格なパーミッションを推奨
+        $this->logFile = $logFilePath;
+        $this->logLevel = $logLevel;
+
+        $logDir = dirname($this->logFile);
+
+        // ログディレクトリが存在しない場合にのみ作成する
+        if (!is_dir($logDir)) {
+            // mkdir(パス, パーミッション, 再帰的に作成するかどうか);
+            if (!mkdir($logDir, 0777, true)) { // true は再帰的作成を意味する
+                // ディレクトリ作成に失敗した場合の致命的なエラー処理
+                error_log("Failed to create log directory: " . $logDir);
+                throw new \Exception("ログディレクトリを作成できません: " . $logDir);
+            }
         }
     }
 
-    private function writeLog($level, $message)
+    public function log(string $message, string $level = 'info'): void
     {
-        $timestamp = date('Y-m-d H:i:s'); // 現在のタイムスタンプ
-        $logEntry = sprintf("[%s] [%s] %s\n", $timestamp, strtoupper($level), $message); // ログエントリのフォーマット
-        // FILE_APPEND: ファイルの終わりに書き込む, LOCK_EX: 排他ロックで他のプロセスからの同時書き込みを防ぐ
-        file_put_contents($this->logFile, $logEntry, FILE_APPEND | LOCK_EX);
+        $this->writeLog($message, $level);
     }
 
-    public function info($message)
+    public function info(string $message): void
     {
-        $this->writeLog('info', $message);
-    }
-    public function log($message)
-    {
-        $this->writeLog('log', $message);
+        $this->writeLog($message, 'INFO');
     }
 
-    public function warning($message)
+    public function warning(string $message): void
     {
-        $this->writeLog('warning', $message);
+        $this->writeLog($message, 'WARNING');
     }
 
-    public function error($message)
+    public function error(string $message): void
     {
-        $this->writeLog('error', $message);
+        $this->writeLog($message, 'ERROR');
+    }
+
+    private function writeLog(string $message, string $level): void
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = "[{$timestamp}] [{$level}] {$message}\n";
+        // FILE_APPEND は既存ファイルに追記。LOCK_EX は排他ロックをかけて書き込み中の競合を防ぐ
+        file_put_contents($this->logFile, $logMessage, FILE_APPEND | LOCK_EX);
     }
 }
