@@ -19,7 +19,7 @@ use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert;
-use PDOException;
+use PDOException; // PDOExceptionをuseしておく
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
@@ -62,9 +62,30 @@ $database = null;
 $dugaApiClient = null;
 $dbBatchInserter = null;
 
+// ロックファイルのパス (一時ファイルとして設定)
+// Docker環境の場合、コンテナ内で共通してアクセスできるパスが望ましい
+$lockFile = '/tmp/process_duga_api.lock'; 
+
 try {
-    $logger = new Logger('duga_api_raw_data_processing.log'); // ログファイル名を明確に
+    // ログファイルのパスを現在の構成に合わせて調整
+    $logger = new Logger(__DIR__ . '/../logs/duga_api_processing.log'); 
     $logger->log("Duga APIから生データの取得とraw_api_dataテーブルへの保存処理を開始します。");
+
+    // ★ ロックファイルのチェックと作成 ★
+    if (file_exists($lockFile)) {
+        $pid = file_get_contents($lockFile);
+        $logger->error("別のインスタンスが既に実行中です (PID: {$pid})。スクリプトを終了します。");
+        die("エラー: 別のインスタンスが既に実行中です。スクリプトを終了します。\n");
+    }
+    file_put_contents($lockFile, getmypid()); // プロセスIDを書き込む
+    register_shutdown_function(function() use ($lockFile, $logger) {
+        if (file_exists($lockFile)) {
+            unlink($lockFile);
+            $logger->log("ロックファイルを削除しました。");
+        }
+    });
+    $logger->log("スクリプトロックファイルを作成しました: {$lockFile}");
+    // ★ ロックファイルのチェックと作成 ここまで ★
 
     $database = new Database($dbConfig, $logger);
     $pdo = $database->getConnection(); // PDOインスタンスを取得
@@ -77,6 +98,10 @@ try {
     error_log("CLI初期設定エラー: " . $e->getMessage());
     if ($logger) {
         $logger->error("CLI初期設定中に致命的なエラーが発生しました: " . $e->getMessage());
+    }
+    // エラー発生時もロックファイルを削除する（register_shutdown_functionで対応済みだが念のため）
+    if (file_exists($lockFile)) {
+        unlink($lockFile);
     }
     die("エラー: CLIスクリプトの初期設定中に問題が発生しました。詳細はサーバログを確認してください。\n");
 }
@@ -115,14 +140,13 @@ $total_processed_records = 0; // 全体の処理済みレコード数
 $raw_data_buffer = []; // raw_api_data テーブルに挿入するためのバッファ
 
 // APIから取得すべき総件数 (初回APIコールで設定される)
-$total_api_results = PHP_INT_MAX; // 初期値はPHPの最大整数で無限ループを回避
+$total_api_results = -1; // 初期値は-1。初回リクエストで設定されるまでループを継続
+
 // APIリクエストの連続失敗カウンター
 $consecutive_empty_responses = 0;
 
 try {
-    // $total_processed_records は $total_api_results を超えることはありえないので、
-    // $total_api_results が設定されたら、それを基にループを続ける
-    while ($total_processed_records < $total_api_results || $current_offset === 1) { // 初回リクエストは必ず実行
+    while (true) { // 無限ループにし、内部で終了条件を厳密にチェック
         $logger->log("Duga APIからアイテムを取得中... (offset: {$current_offset}, 件数: " . API_RECORDS_PER_REQUEST . ")");
 
         $additional_api_params = [];
@@ -142,8 +166,8 @@ try {
         // DugaApiClientの変更に合わせて 'total_hits' を 'count' に修正
         $current_total_hits = $api_response['count'] ?? 0; 
 
-        // 初回リクエスト時に全体のヒット数を設定
-        if ($current_offset === 1) {
+        // 初回リクエスト時、または total_api_results がまだ設定されていない場合に設定
+        if ($total_api_results === -1) {
             $total_api_results = $current_total_hits;
             $logger->log("Duga APIから報告された検索結果総数: {$total_api_results}件");
             if ($total_api_results === 0) {
@@ -151,18 +175,22 @@ try {
                 break; // 0件ならループを抜ける
             }
         }
-
+        
+        // 取得したレコード数に基づいて、連続空レスポンスカウンターを更新
         if (empty($api_data_batch)) {
             $consecutive_empty_responses++;
             $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
-            if ($total_processed_records < $total_api_results && $consecutive_empty_responses < MAX_CONSECUTIVE_EMPTY_RESPONSES) {
-                $logger->log("APIの総件数にまだ達していないため、リトライします (offset: {$current_offset})");
-                sleep(1); // 短い休憩を挟むことで、レートリミットを回避できる可能性
-                continue; // 現在のオフセットで次のループへ（再度APIリクエスト）
-            } else {
-                $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数を超過したため、処理を終了します。");
-                break; // ループを抜ける
+            
+            // 連続空レスポンス数が閾値に達した場合、または総件数を超過しそうな場合は終了
+            // もしAPIがこれ以上データを持っていないと判断できる場合は、ここで終了
+            if ($consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSES || $total_processed_records >= $total_api_results) {
+                 $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数に達した/超過したため、処理を終了します。");
+                 break; // ループを抜ける
             }
+            // 空のレスポンスでもオフセットは進めるべき。同じオフセットで無限にリトライするのを防ぐ。
+            $current_offset++; 
+            sleep(1); // 短い休憩を挟むことで、レートリミットを回避できる可能性
+            continue; // 次のオフセットで次のループへ
         } else {
             $consecutive_empty_responses = 0; // データが正常に取得できた場合、連続空レスポンスカウンターをリセット
         }
@@ -223,10 +251,19 @@ try {
         $total_processed_records += count($api_data_batch); // 実際に処理したレコード数を加算
         $current_offset++; // 次のオフセットへ
         
+        // 全件取得が完了したかチェック
+        // APIから返された総件数より多くのレコードを処理した、
+        // または、次に取得すべきオフセットが総件数を超過する場合、ループを抜ける
+        // (total_api_results はヒット数なので、offset * hits > total_hits で終了)
+        if (($current_offset - 1) * API_RECORDS_PER_REQUEST >= $total_api_results && $total_api_results !== 0) {
+            $logger->log("APIから報告された全てのレコード ({$total_api_results}件) の取得が完了しました。総処理レコード数: {$total_processed_records}件");
+            break; // ループを抜ける
+        }
+
         // APIリクエスト間のインターバル (任意)
         // Duga APIのレートリミットを考慮して適宜調整
         usleep(200000); // 200ミリ秒 (0.2秒) 程度の待機
-    } // while ループ終了
+    } // while (true) ループ終了
 
     // ループ終了後、残っているバッファがあれば最後にUPSERT
     if (!empty($raw_data_buffer)) {
@@ -249,7 +286,7 @@ try {
     $logger->log("Duga APIからの生データ取得とデータベース保存処理が完了しました。総処理レコード数: {$total_processed_records}件");
 
 } catch (Exception $e) {
-    if ($pdo->inTransaction()) {
+    if ($pdo && $pdo->inTransaction()) { // $pdoがnullでないことを確認
         $pdo->rollBack();
         $logger->error("予期せぬエラー発生によりトランザクションをロールバックしました。");
     }
