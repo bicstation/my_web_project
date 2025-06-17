@@ -1,6 +1,17 @@
 <?php
 // C:\project\my_web_project\app\cli\process_duga_api.php
 
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// これが出力されるかどうかが非常に重要です。
+// もしこれすら出力されないなら、PHPの実行環境自体に問題があります。
+error_log("--- スクリプト実行開始（強制エラー表示ON） ---", 4); // 4 はSAPIログ（CLIならstderr）に出力
+// または直接コンソールに出力
+echo "--- スクリプト実行開始（強制エラー表示ON） ---\n";
+
 // Composerのオートローダーを読み込む
 require_once __DIR__ . '/../../vendor/autoload.php';
 
