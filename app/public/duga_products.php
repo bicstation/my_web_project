@@ -224,7 +224,6 @@ try {
         </div>
     <?php endif; ?>
 
-    <!-- フィルタリング・ソートフォーム -->
     <div class="filter-sort-form">
         <form action="index.php" method="GET" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="duga_products_page">
@@ -279,7 +278,6 @@ try {
             <?php endforeach; ?>
         </div>
 
-        <!-- ページネーション -->
         <nav aria-label="Page navigation" class="pagination-nav">
             <ul class="pagination">
                 <li class="page-item <?= ($currentPage <= 1) ? 'disabled' : '' ?>">

@@ -1,418 +1,390 @@
 <?php
-// C:\project\my_web_project\app\public\duga_product_detail.php
-// Duga商品の個別詳細ページ (index.phpにインクルードされることを想定)
+// public/duga_product_detail.php
 
-// LoggerとDatabaseクラスは親スクリプト (index.php) でuseされている、
-// もしくはオートロードされることを前提とする
-use App\Core\Logger;
+require_once __DIR__ . '/../vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
+$dotenv->load();
+
 use App\Core\Database;
+use App\Core\Logger;
+// LinkClicker クラスをインポート
+use App\Util\LinkClicker;
 
-global $pdo, $logger; // index.php で設定された$pdoと$loggerを利用
-
-// VS Codeの型推論を助けるためのPHPDocを追加
-/** @var \App\Core\Logger $logger */
-/** @var \PDO $pdo */
-
+$logger = null;
+$database = null;
 $product = null;
-$errorMessage = '';
-$productId = $_GET['product_id'] ?? ''; // URLからproduct_idを取得
-$relatedProducts = []; // 関連商品データを格納する配列
-$prevProductLink = null; // 前の商品へのリンク
-$nextProductLink = null; // 次の商品へのリンク
+$related_items = []; // 関連商品
+$message = "";
 
-// 受信したproduct_idをログに出力
-if ($logger) {
-    $logger->log("Duga商品詳細ページ: 受信した product_id: '{$productId}'");
+try {
+    $logger = new Logger('application.log');
+    $database = new Database([
+        'host' => $_ENV['DB_HOST'] ?? 'localhost',
+        'dbname' => $_ENV['DB_NAME'] ?? 'tiper',
+        'user' => $_ENV['DB_USER'] ?? 'root',
+        'pass' => $_ENV['DB_PASS'] ?? 'password',
+        'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+    ], $logger);
+    $pdo = $database->getConnection();
+
+    // LinkClicker のインスタンス化
+    $linkClicker = new LinkClicker($database, $logger);
+
+} catch (Exception $e) {
+    error_log("アプリケーション初期設定エラー: " . $e->getMessage());
+    if ($logger) {
+        $logger->error("アプリケーション初期設定中に致命的なエラーが発生しました: " . htmlspecialchars($e->getMessage()));
+    }
+    die("<div class='alert alert-danger'>ウェブサイトの初期設定中にエラーが発生しました。ログを確認してください。<br>" . htmlspecialchars($e->getMessage()) . "</div>");
 }
 
-if (empty($productId)) {
-    $errorMessage = "商品IDが指定されていません。";
-    if ($logger) {
-        $logger->warning("Duga商品詳細ページ: 商品IDが指定されていません。");
-    }
+// -----------------------------------------------------
+// 商品詳細の取得ロジック
+// -----------------------------------------------------
+$product_id = $_GET['product_id'] ?? null;
+
+if (!$product_id) {
+    // product_id がない場合はエラーまたは一覧ページへリダイレクト
+    $message = "<div class='alert alert-danger'>商品IDが指定されていません。</div>";
+    // header("Location: /"); // 必要であればリダイレクト
+    // exit();
 } else {
     try {
-        if (!$pdo) {
-            // $pdoがまだセットされていない場合は、ここでデータベース接続を確立
-            $dbConfig = [
-                'host'    => $_ENV['DB_HOST'] ?? 'localhost',
-                'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
-                'user'    => $_ENV['DB_USER'] ?? 'root',
-                'pass'    => $_ENV['DB_PASS'] ?? 'password',
-                'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
-            ];
-            $database = new Database($dbConfig, $logger);
-            $pdo = $database->getConnection();
-            if ($logger) {
-                $logger->log("Duga商品詳細ページ: PDOが未設定だったため、再接続を試みました。");
-            }
-        }
+        // products テーブルから商品情報を取得
+        $stmt = $pdo->prepare("SELECT p.*,
+                                      GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ', ') AS categories_name,
+                                      GROUP_CONCAT(DISTINCT c.slug ORDER BY c.slug SEPARATOR ',') AS categories_slug,
+                                      GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') AS genres_name,
+                                      GROUP_CONCAT(DISTINCT g.slug ORDER BY g.slug SEPARATOR ',') AS genres_slug,
+                                      GROUP_CONCAT(DISTINCT l.name ORDER BY l.name SEPARATOR ', ') AS labels_name,
+                                      GROUP_CONCAT(DISTINCT l.slug ORDER BY l.slug SEPARATOR ',') AS labels_slug,
+                                      GROUP_CONCAT(DISTINCT d.name ORDER BY d.name SEPARATOR ', ') AS directors_name,
+                                      GROUP_CONCAT(DISTINCT d.slug ORDER BY d.slug SEPARATOR ',') AS directors_slug,
+                                      GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') AS series_name,
+                                      GROUP_CONCAT(DISTINCT s.slug ORDER BY s.slug SEPARATOR ',') AS series_slug,
+                                      GROUP_CONCAT(DISTINCT a.name ORDER BY a.name SEPARATOR ', ') AS actors_name,
+                                      GROUP_CONCAT(DISTINCT a.slug ORDER BY a.slug SEPARATOR ',') AS actors_slug
+                               FROM products p
+                               LEFT JOIN product_categories pc ON p.product_id = pc.product_id
+                               LEFT JOIN categories c ON pc.category_id = c.id
+                               LEFT JOIN product_genres pg ON p.product_id = pg.product_id
+                               LEFT JOIN genres g ON pg.genre_id = g.id
+                               LEFT JOIN product_labels pl ON p.product_id = pl.product_id
+                               LEFT JOIN labels l ON pl.label_id = l.id
+                               LEFT JOIN product_directors pdr ON p.product_id = pdr.product_id
+                               LEFT JOIN directors d ON pdr.director_id = d.id
+                               LEFT JOIN product_series ps ON p.product_id = ps.product_id
+                               LEFT JOIN series s ON ps.series_id = s.id
+                               LEFT JOIN product_actors pa ON p.product_id = pa.product_id
+                               LEFT JOIN actors a ON pa.actor_id = a.id
+                               WHERE p.product_id = :product_id
+                               GROUP BY p.product_id"); // GROUP_CONCATを使うためGROUP BYが必要
 
-        // 指定されたproduct_idの商品データを取得
-        $stmt = $pdo->prepare("SELECT product_id, title, release_date, maker_name, genre, url, image_url FROM products WHERE source_api = 'Duga' AND product_id = :product_id LIMIT 1");
-        $stmt->execute([':product_id' => $productId]);
+        $stmt->execute([':product_id' => $product_id]);
         $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$product) {
-            $errorMessage = "指定された商品が見つかりませんでした。";
-            if ($logger) {
-                $logger->warning("Duga商品詳細ページ: 商品ID '{$productId}' の商品が見つかりませんでした。DBクエリの結果: " . json_encode($stmt->errorInfo()));
-            }
+            $message = "<div class='alert alert-warning'>お探しの商品が見つかりませんでした。</div>";
+            $logger->warning("商品詳細が見つかりません: product_id = " . htmlspecialchars($product_id));
         } else {
-            if ($logger) {
-                $logger->log("Duga商品詳細ページ: 商品ID '{$productId}' の詳細データを取得しました。タイトル: '{$product['title']}'");
-                $logger->log("Duga商品詳細ページ: 取得した商品のジャンル: '{$product['genre']}'");
-            }
+            // 詳細ページ表示のクリックログを記録
+            $linkClicker->logClick(
+                $product_id,
+                'detail_view',
+                $_SERVER['HTTP_REFERER'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null,
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['REQUEST_URI'] ?? null // このページのURL自体を記録
+            );
 
-            // 前後の商品のIDを取得するロジック
-            // release_dateとproduct_idで順序を決定
-            if (!empty($product['genre']) && !empty($product['release_date'])) {
-                $current_release_date = $product['release_date'];
-                $current_product_id = $product['product_id'];
-                $current_genre = $product['genre'];
+            // 関連商品の取得 (例: 同じカテゴリの商品をランダムに5件)
+            // 簡略化のため、ここではproduct_idがnullでない限り関連商品を取得
+            // 実際には、categories_slugなどを利用して関連商品を絞り込む
+            $related_sql = "SELECT p.product_id, p.title, p.image_url, p.price
+                            FROM products p ";
+            $related_params = [];
+            $related_where = " WHERE p.product_id != :current_product_id ";
+            $related_params[':current_product_id'] = $product_id;
 
-                // 前の商品 (現在のジャンル内で、リリース日が古い、またはリリース日が同じでproduct_idがより小さいもの)
-                $sql_prev = "SELECT product_id FROM products WHERE source_api = 'Duga' AND genre = ? AND (release_date < ? OR (release_date = ? AND product_id < ?)) ORDER BY release_date DESC, product_id DESC LIMIT 1";
-                $params_prev = [
-                    $current_genre,
-                    $current_release_date,
-                    $current_release_date,
-                    $current_product_id
-                ];
-                if ($logger) {
-                    $logger->log("Executing SQL_PREV: " . $sql_prev . " with params: " . json_encode($params_prev));
-                }
-                $stmt_prev = $pdo->prepare($sql_prev);
-                $stmt_prev->execute($params_prev);
-                $prevProduct = $stmt_prev->fetch(PDO::FETCH_ASSOC);
-                if ($prevProduct) {
-                    $prevProductLink = 'http://' . $_SERVER['HTTP_HOST'] . '/index.php?page=duga_product_detail&product_id=' . urlencode($prevProduct['product_id']);
-                    $logger->log("Duga商品詳細ページ: 前の商品ID: {$prevProduct['product_id']}");
-                } else {
-                    $logger->log("Duga商品詳細ページ: 前の商品が見つかりませんでした。");
-                }
-
-                // 次の商品 (現在のジャンル内で、リリース日が新しい、またはリリース日が同じでproduct_idがより大きいもの)
-                $sql_next = "SELECT product_id FROM products WHERE source_api = 'Duga' AND genre = ? AND (release_date > ? OR (release_date = ? AND product_id > ?)) ORDER BY release_date ASC, product_id ASC LIMIT 1";
-                $params_next = [
-                    $current_genre,
-                    $current_release_date,
-                    $current_release_date,
-                    $current_product_id
-                ];
-                if ($logger) {
-                    $logger->log("Executing SQL_NEXT: " . $sql_next . " with params: " . json_encode($params_next));
-                }
-                $stmt_next = $pdo->prepare($sql_next);
-                $stmt_next->execute($params_next);
-                $nextProduct = $stmt_next->fetch(PDO::FETCH_ASSOC);
-                if ($nextProduct) {
-                    $nextProductLink = 'http://' . $_SERVER['HTTP_HOST'] . '/index.php?page=duga_product_detail&product_id=' . urlencode($nextProduct['product_id']);
-                    $logger->log("Duga商品詳細ページ: 次の商品ID: {$nextProduct['product_id']}");
-                } else {
-                    $logger->log("Duga商品詳細ページ: 次の商品が見つかりませんでした。");
-                }
-            } else {
-                $logger->log("Duga商品詳細ページ: 現在の商品のジャンルまたはリリース日が空のため、前後の商品を取得できません。");
-            }
-
-
-            // 関連商品の取得
-            if (!empty($product['genre'])) {
-                $related_products_display_limit = 6; // 表示する関連商品の数
-
-                // 同じジャンルの他のDuga商品を取得（現在の商品を除く）
-                // 関連商品もrelease_dateの降順で並べます。
-                $sql_related = "SELECT product_id, title, image_url, maker_name FROM products WHERE source_api = 'Duga' AND genre = :genre_related AND product_id != :current_product_id_related ORDER BY release_date DESC LIMIT :limit_val_related";
-                $stmt_related = $pdo->prepare($sql_related);
-                $params_related = [ // bindValueの代わりにexecuteの配列形式を使用
-                    ':genre_related' => $product['genre'],
-                    ':current_product_id_related' => $productId,
-                    ':limit_val_related' => (int)$related_products_display_limit // int型であることを保証
-                ];
-                if ($logger) {
-                    $logger->log("Executing SQL_RELATED: " . $sql_related . " with params: " . json_encode($params_related));
-                }
-                $stmt_related->execute($params_related); // ここでパラメータを渡す
-                $relatedProducts = $stmt_related->fetchAll(PDO::FETCH_ASSOC);
-
-                if ($logger) {
-                    $logger->log("Duga商品詳細ページ: ジャンル '{$product['genre']}' の関連商品を " . count($relatedProducts) . " 件取得しました。");
-                    if (empty($relatedProducts)) {
-                        $logger->log("Duga商品詳細ページ: 関連商品が見つかりませんでした。考えられる原因: 同じジャンルの他の商品がない、またはジャンル名がデータベースと一致しない。");
-                    }
-                }
-            } else {
-                if ($logger) {
-                    $logger->log("Duga商品詳細ページ: 現在の商品のジャンルが空のため、関連商品を取得できません。");
+            // もしカテゴリ情報があるなら、同じカテゴリの商品を優先的に取得
+            if (!empty($product['categories_slug'])) {
+                $category_slugs_array = explode(',', $product['categories_slug']);
+                // 最初のカテゴリに属する関連商品を探す例
+                if (!empty($category_slugs_array[0])) {
+                    $related_sql .= " JOIN product_categories pc ON p.product_id = pc.product_id
+                                      JOIN categories c ON pc.category_id = c.id ";
+                    $related_where .= " AND c.slug = :related_category_slug ";
+                    $related_params[':related_category_slug'] = $category_slugs_array[0];
                 }
             }
+
+            $related_sql .= $related_where . " ORDER BY RAND() LIMIT 5"; // ランダムに5件
+
+            $stmt_related = $pdo->prepare($related_sql);
+            $stmt_related->execute($related_params);
+            $related_items = $stmt_related->fetchAll(PDO::FETCH_ASSOC);
         }
 
     } catch (PDOException $e) {
-        $errorMessage = "データベースエラーが発生しました: " . htmlspecialchars($e->getMessage());
-        error_log("Duga Product Detail DB error: " . $e->getMessage());
-        if ($logger) {
-            $logger->error("Duga Product Detail DB error: " . $e->getMessage());
-        }
-    } catch (Exception $e) {
-        $errorMessage = "アプリケーションエラーが発生しました: " . htmlspecialchars($e->getMessage());
-        error_log("Duga Product Detail application error: " . $e->getMessage());
-        if ($logger) {
-            $logger->error("Duga Product Detail application error: " . $e->getMessage());
-        }
+        $logger->error("商品詳細または関連商品の取得中にエラーが発生しました: " . $e->getMessage());
+        $message = "<div class='alert alert-danger'>商品情報の取得中にエラーが発生しました。</div>";
     }
 }
 ?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= $product ? htmlspecialchars($product['title']) . ' - Tiper.Live' : '商品が見つかりません - Tiper.Live' ?></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f4f7f6; }
+        .navbar { background-color: #343a40; }
+        .navbar-brand, .nav-link { color: #ffffff !important; }
+        .product-detail-card {
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            padding: 30px;
+            background-color: #ffffff;
+        }
+        .product-image-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .product-image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .product-title {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .product-meta {
+            font-size: 1.1em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .product-price {
+            font-size: 2em;
+            color: #dc3545;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .affiliate-link-btn {
+            background-color: #28a745; /* Green for affiliate link */
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+        }
+        .affiliate-link-btn:hover {
+            background-color: #218838;
+            color: white;
+        }
+        .section-header {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #343a40;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .related-product-card {
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s ease;
+        }
+        .related-product-card:hover {
+            transform: translateY(-3px);
+        }
+        .related-product-card img {
+            height: 150px;
+            object-fit: cover;
+            width: 100%;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+        .related-product-card .card-title {
+            font-size: 1em;
+            height: 3em; /* 2行制限 */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+            background-color: #000; /* Black background for video area */
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+    </style>
+</head>
+<body>
 
-<style>
-    /* 個別ページ用のスタイル */
-    .product-detail-card {
-        border-radius: 12px;
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-        padding: 30px;
-        margin-top: 30px;
-        background-color: #ffffff;
-    }
-    .product-image {
-        max-width: 100%;
-        height: auto;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    .product-info h2 {
-        color: #007bff;
-        font-weight: bold;
-        margin-bottom: 20px;
-    }
-    .product-info p {
-        font-size: 1.05rem;
-        line-height: 1.8;
-        color: #343a40;
-    }
-    .product-info strong {
-        color: #000;
-    }
-    .btn-affiliate-detail {
-        background-color: #28a745;
-        border-color: #28a745;
-        color: #ffffff;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 15px 30px;
-        font-size: 1.2rem;
-        transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-        width: 100%;
-        margin-top: 30px;
-    }
-    .btn-affiliate-detail:hover {
-        background-color: #218838;
-        border-color: #1e7e34;
-        transform: translateY(-3px);
-    }
-    .back-link {
-        margin-top: 20px;
-        display: block;
-        text-align: center;
-        font-size: 1.1rem;
-    }
-    .back-link a {
-        color: #007bff;
-        text-decoration: none;
-        font-weight: 500;
-    }
-    .back-link a:hover {
-        text-decoration: underline;
-    }
-
-    /* 前後ページナビゲーションのスタイル */
-    .product-navigation {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 20px;
-        margin-bottom: 20px;
-    }
-    .product-navigation .btn-prev {
-        background-color: #6c757d; /* Gray for previous */
-        border-color: #6c757d;
-        color: white;
-    }
-    .product-navigation .btn-prev:hover {
-        background-color: #5a6268;
-        border-color: #545b62;
-    }
-    .product-navigation .btn-next {
-        background-color: #007bff; /* Blue for next */
-        border-color: #007bff;
-        color: white;
-    }
-    .product-navigation .btn-next:hover {
-        background-color: #0056b3;
-        border-color: #0056b3;
-    }
-</style>
-
-<div class="container-fluid bg-white p-4 rounded shadow-sm">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
-            <li class="breadcrumb-item"><a href="/"><i class="fas fa-home me-1"></i>ホーム</a></li>
-            <li class="breadcrumb-item"><a href="http://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/index.php?page=duga_products_page"><i class="fas fa-video me-1"></i>Duga商品一覧</a></li>
-            <?php if (!empty($product['genre'])): ?>
-            <li class="breadcrumb-item"><a href="http://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/index.php?page=duga_products_page&genre=<?= urlencode($product['genre']) ?>"><i class="fas fa-tag me-1"></i><?= htmlspecialchars($product['genre']) ?></a></li>
-            <?php endif; ?>
-            <li class="breadcrumb-item active" aria-current="page"><i class="fas fa-info-circle me-1"></i>商品詳細</li>
-        </ol>
-    </nav>
-
-    <?php if (!empty($errorMessage)): ?>
-        <div class="alert alert-danger mt-3" role="alert">
-            <?= $errorMessage ?>
-            <a href="http://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/index.php?page=duga_products_page" class="btn btn-sm btn-primary ms-3">一覧に戻る</a>
+<nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">Tiper.Live</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="/">ホーム</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/products_admin.php">管理画面</a>
+                </li>
+            </ul>
         </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <?php if (!empty($message)): ?>
+        <?= $message ?>
     <?php elseif ($product): ?>
-        <!-- 前後ページナビゲーション (上部) -->
-        <?php if ($prevProductLink || $nextProductLink): // どちらかのリンクがある場合のみナビゲーションを表示 ?>
-            <div class="product-navigation">
-                <?php if ($prevProductLink): ?>
-                    <a href="<?= $prevProductLink ?>" class="btn btn-prev"><i class="fas fa-chevron-left me-2"></i>前の商品</a>
-                <?php endif; ?>
-                <?php if ($nextProductLink): ?>
-                    <a href="<?= $nextProductLink ?>" class="btn btn-next">次の商品<i class="fas fa-chevron-right ms-2"></i></a>
+        <div class="row product-detail-card">
+            <div class="col-md-6">
+                <div class="product-image-container">
+                    <img src="<?= htmlspecialchars($product['image_url'] ?: '/img/placeholder.png') ?>" alt="<?= htmlspecialchars($product['title']) ?>">
+                </div>
+                <?php if (!empty($product['video_url'])): ?>
+                    <div class="video-container">
+                        <?php
+                            // YouTube URLを埋め込みURLに変換する関数
+                            function getYoutubeEmbedUrl($url) {
+                                $pattern = '/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=|embed\/|v\/|)([\w-]{11})(?:(?:\?|&).*)?/';
+                                preg_match($pattern, $url, $matches);
+                                if (isset($matches[1])) {
+                                    return 'https://www.youtube.com/embed/' . $matches[1] . '?autoplay=0&rel=0';
+                                }
+                                return null;
+                            }
+                            $embed_url = getYoutubeEmbedUrl($product['video_url']);
+                        ?>
+                        <?php if ($embed_url): ?>
+                            <iframe src="<?= htmlspecialchars($embed_url) ?>" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                        <?php else: ?>
+                            <p class="text-danger text-center">動画のURLが無効です。</p>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
             </div>
-        <?php endif; ?>
+            <div class="col-md-6">
+                <h1 class="product-title"><?= htmlspecialchars($product['title']) ?></h1>
+                <p class="product-meta"><strong>リリース日:</strong> <?= htmlspecialchars($product['release_date']) ?></p>
+                <?php if (!empty($product['maker_name'])): ?>
+                    <p class="product-meta"><strong>メーカー:</strong> <?= htmlspecialchars($product['maker_name']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($product['categories_name'])): ?>
+                    <p class="product-meta"><strong>カテゴリ:</strong>
+                    <?php
+                        $categories = explode(',', $product['categories_name']);
+                        $category_slugs = explode(',', $product['categories_slug']);
+                        $category_links = [];
+                        foreach ($categories as $index => $cat_name) {
+                            if (isset($category_slugs[$index])) {
+                                $category_links[] = '<a href="/?category=' . htmlspecialchars($category_slugs[$index]) . '">' . htmlspecialchars(trim($cat_name)) . '</a>';
+                            }
+                        }
+                        echo implode(', ', $category_links);
+                    ?>
+                    </p>
+                <?php endif; ?>
+                <?php if (!empty($product['genres_name'])): ?>
+                    <p class="product-meta"><strong>ジャンル:</strong>
+                    <?php
+                        $genres = explode(',', $product['genres_name']);
+                        $genre_slugs = explode(',', $product['genres_slug']);
+                        $genre_links = [];
+                        foreach ($genres as $index => $gen_name) {
+                            if (isset($genre_slugs[$index])) {
+                                $genre_links[] = '<a href="/?genre=' . htmlspecialchars($genre_slugs[$index]) . '">' . htmlspecialchars(trim($gen_name)) . '</a>';
+                            }
+                        }
+                        echo implode(', ', $genre_links);
+                    ?>
+                    </p>
+                <?php endif; ?>
+                <?php if (!empty($product['labels_name'])): ?>
+                    <p class="product-meta"><strong>レーベル:</strong> <?= htmlspecialchars($product['labels_name']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($product['directors_name'])): ?>
+                    <p class="product-meta"><strong>監督:</strong> <?= htmlspecialchars($product['directors_name']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($product['series_name'])): ?>
+                    <p class="product-meta"><strong>シリーズ:</strong> <?= htmlspecialchars($product['series_name']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($product['actors_name'])): ?>
+                    <p class="product-meta"><strong>出演:</strong> <?= htmlspecialchars($product['actors_name']) ?></p>
+                <?php endif; ?>
 
-        <div class="product-detail-card row">
-            <div class="col-md-5 text-center">
-                <img src="<?= htmlspecialchars($product['image_url'] ?? 'https://placehold.co/500x370/e9ecef/6c757d?text=No Image') ?>" class="product-image" alt="<?= htmlspecialchars($product['title'] ?? 'No Title') ?>" onerror="this.onerror=null;this.src='https://placehold.co/500x370/e9ecef/6c757d?text=No Image';">
-                <?php if (!empty($product['url'])): ?>
-                    <a href="<?= htmlspecialchars($product['url']) ?>" class="btn btn-affiliate-detail track-purchase-link" data-product-id="<?= htmlspecialchars($product['product_id']) ?>" data-affiliate-url="<?= htmlspecialchars($product['url']) ?>" target="_blank" rel="noopener noreferrer">Dugaで購入 <i class="fas fa-external-link-alt ms-1"></i></a>
-                <?php else: ?>
-                    <button class="btn btn-secondary btn-affiliate-detail" disabled>Dugaで購入 (リンクなし)</button>
+                <?php if (!empty($product['price'])): ?>
+                    <p class="product-price">販売価格: &yen;<?= number_format($product['price']) ?></p>
                 <?php endif; ?>
-            </div>
-            <div class="col-md-7 product-info">
-                <h2><?= htmlspecialchars($product['title'] ?? 'タイトル不明') ?></h2>
-                <p><strong>製品ID:</strong> <?= htmlspecialchars($product['product_id'] ?? '不明') ?></p>
-                <p><strong>メーカー:</strong> <?= htmlspecialchars($product['maker_name'] ?? '不明') ?></p>
-                <p><strong>ジャンル:</strong> <?= htmlspecialchars($product['genre'] ?? '不明') ?></p>
-                <p><strong>発売日:</strong> <?= htmlspecialchars($product['release_date'] ?? '不明') ?></p>
-                <p>ここに詳細な商品説明が入ります。例えば、キャスト、あらすじ、特典情報など。
-                現在のデータベーススキーマではこれらの詳細情報が直接 products テーブルに保存されていないため、
-                必要であれば raw_api_data からパースするか、products テーブルにカラムを追加してください。</p>
+
+                <?php if (!empty($product['url'])): ?>
+                    <a href="/click_redirect.php?product_id=<?= htmlspecialchars($product['product_id']) ?>&redirect_to=<?= urlencode($product['url']) ?>" class="btn affiliate-link-btn w-100" target="_blank">
+                        <i class="fas fa-external-link-alt me-2"></i>外部サイトで購入する
+                    </a>
+                <?php else: ?>
+                    <div class="alert alert-info mt-3">現在、この商品の購入リンクはありません。</div>
+                <?php endif; ?>
             </div>
         </div>
 
-        <!-- 前後ページナビゲーション (下部) -->
-        <?php if ($prevProductLink || $nextProductLink): // どちらかのリンクがある場合のみナビゲーションを表示 ?>
-            <div class="product-navigation">
-                <?php if ($prevProductLink): ?>
-                    <a href="<?= $prevProductLink ?>" class="btn btn-prev"><i class="fas fa-chevron-left me-2"></i>前の商品</a>
-                <?php endif; ?>
-                <?php if ($nextProductLink): ?>
-                    <a href="<?= $nextProductLink ?>" class="btn btn-next">次の商品<i class="fas fa-chevron-right ms-2"></i></a>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
-
-        <!-- 関連商品の表示セクション -->
-        <?php if (!empty($relatedProducts)): ?>
-        <div class="card mt-5 border-0 shadow-sm">
-            <div class="card-header bg-primary text-white rounded-top-lg py-3">
-                <h4 class="mb-0"><i class="fas fa-puzzle-piece me-2"></i>このジャンルの関連商品</h4>
-            </div>
-            <div class="card-body">
-                <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
-                    <?php foreach ($relatedProducts as $relatedItem): ?>
-                    <div class="col">
-                        <div class="card h-100 border rounded-lg overflow-hidden shadow-sm">
-                            <img src="<?= htmlspecialchars($relatedItem['image_url'] ?? 'https://placehold.co/200x150/e9ecef/6c757d?text=No Image') ?>" class="card-img-top" alt="<?= htmlspecialchars($relatedItem['title'] ?? 'タイトル不明') ?>" onerror="this.onerror=null;this.src='https://placehold.co/200x150/e9ecef/6c757d?text=No Image';">
-                            <div class="card-body p-2 d-flex flex-column">
-                                <h6 class="card-title mb-1 text-truncate" style="font-size: 0.9rem;"><?= htmlspecialchars($relatedItem['title'] ?? 'タイトル不明') ?></h6>
-                                <p class="card-text text-muted mb-2" style="font-size: 0.8rem;">
-                                    <i class="fas fa-industry me-1"></i><?= htmlspecialchars($relatedItem['maker_name'] ?? '不明') ?>
-                                </p>
-                                <div class="mt-auto">
-                                    <?php
-                                    $relatedDetailPageLink = 'http://' . $_SERVER['HTTP_HOST'] . '/index.php?page=duga_product_detail&product_id=' . urlencode($relatedItem['product_id']);
-                                    ?>
-                                    <a href="<?= $relatedDetailPageLink ?>" class="btn btn-sm btn-outline-primary w-100 rounded-pill" target="_self">詳細 <i class="fas fa-chevron-right ms-1"></i></a>
-                                </div>
+        <?php if (!empty($related_items)): ?>
+            <h3 class="section-header">関連商品</h3>
+            <div class="row mt-4">
+                <?php foreach ($related_items as $r_product): ?>
+                    <div class="col-6 col-md-4 col-lg-2 mb-4">
+                        <div class="card related-product-card h-100">
+                            <a href="/duga_product_detail.php?product_id=<?= htmlspecialchars($r_product['product_id']) ?>">
+                                <img src="<?= htmlspecialchars($r_product['image_url'] ?: '/img/placeholder.png') ?>" class="card-img-top" alt="<?= htmlspecialchars($r_product['title']) ?>">
+                            </a>
+                            <div class="card-body text-center p-2">
+                                <h6 class="card-title"><?= htmlspecialchars($r_product['title']) ?></h6>
+                                <?php if (!empty($r_product['price'])): ?>
+                                    <p class="card-text text-danger fw-bold">&yen;<?= number_format($r_product['price']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
-                    <?php endforeach; ?>
-                </div>
+                <?php endforeach; ?>
             </div>
-        </div>
         <?php endif; ?>
 
-        <div class="back-link">
-            <a href="http://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/index.php?page=duga_products_page"><i class="fas fa-arrow-left me-2"></i>Duga商品一覧に戻る</a>
-        </div>
-    <?php else: ?>
-        <div class="alert alert-info mt-3" role="alert">
-            詳細を表示する商品が見つかりませんでした。
-            <a href="http://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/index.php?page=duga_products_page" class="btn btn-sm btn-primary ms-3">一覧に戻る</a>
-        </div>
     <?php endif; ?>
 </div>
 
-<!-- Bootstrap JS Bundle (Popper.jsを含む) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // 全ての「Dugaで購入」リンク（トラック対象）を取得
-    const purchaseLinks = document.querySelectorAll('.track-purchase-link');
-
-    purchaseLinks.forEach(link => {
-        link.addEventListener('click', function(event) {
-            // デフォルトのリンク遷移を一時的に阻止
-            event.preventDefault();
-
-            // データ属性からproduct_idとアフィリエイトURLを取得
-            const productId = this.dataset.productId;
-            const affiliateUrl = this.dataset.affiliateUrl;
-
-            // トラッキングデータを準備
-            const trackingData = {
-                product_id: productId,
-                click_type: 'affiliate_purchase',
-                referrer: window.location.href, // 現在のページのURL
-                user_agent: navigator.userAgent, // ユーザーエージェント
-                // IPアドレスはサーバーサイドで取得するため、ここでは送信しない
-                // session_id はPHP側で管理している場合は、PHPからJSに渡す必要がある
-            };
-
-            // トラッキングエンドポイントにデータを送信
-            fetch('/track_click.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(trackingData),
-            })
-            .then(response => {
-                if (!response.ok) {
-                    console.error('トラッキングデータ送信に失敗しました:', response.statusText);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.status === 'success') {
-                    console.log('トラッキングデータが正常に送信されました:', data.message);
-                } else {
-                    console.error('トラッキングデータ送信エラー:', data.message);
-                }
-            })
-            .catch(error => {
-                console.error('トラッキングデータ送信中にエラーが発生しました:', error);
-            })
-            .finally(() => {
-                // トラッキングの成否に関わらず、最終的にアフィリエイトURLへ遷移
-                window.open(affiliateUrl, '_blank');
-            });
-        });
-    });
-});
-</script>
+</body>
+</html>
