@@ -54,4 +54,9 @@ class Database
     {
         return $this->pdo; // 確立されたPDO接続を返す
     }
+        public function closeConnection(): void
+    {
+        $this->pdo = null;
+        $this->logger->info("データベース接続を閉じました。");
+    }
 }
