@@ -29,9 +29,10 @@ const DEFAULT_AGENT_ID = '48043';
 const DEFAULT_ADULT_PARAM = '1';
 const DEFAULT_SORT_PARAM = 'favorite';
 const DEFAULT_BANNER_ID = '01';
-const API_RECORDS_PER_REQUEST = 100; // Duga APIが一度に返すレコード数
-const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
-const API_SOURCE_NAME = 'duga';     // このAPIのソース名
+// Duga APIが一度に返すレコード数 (APIのドキュメントを確認し、最大値を設定すること。通常100〜500)
+const API_RECORDS_PER_REQUEST = 100;
+const DB_BUFFER_SIZE = 500;            // データベースへのバッチ処理のチャンクサイズ
+const API_SOURCE_NAME = 'duga';        // このAPIのソース名
 
 // .env から Duga API の設定を取得
 // 環境変数がない場合のデフォルト値を設定することも可能
@@ -102,7 +103,7 @@ $sort       = $cli_options['sort'] ?? DEFAULT_SORT_PARAM;
 
 $logger->log("CLI Arguments processed: " . json_encode([
     'start_date' => $start_date,
-    'end_date' => $end_date, // ここは $end_date で正しいです
+    'end_date' => $end_date,
     'keyword' => $keyword,
     'genre_id' => $genre_id,
     'agentid' => $agentid,
@@ -115,16 +116,18 @@ $logger->log("CLI Arguments processed: " . json_encode([
 // -----------------------------------------------------
 // データ取得と保存のメインロジック
 // -----------------------------------------------------
-$current_page = 1; // 現在のページ番号 (ログと進捗表示用)
+$current_offset = 1; // Duga APIの offset は1から始まる
 $total_processed_records = 0; // 全体の処理済みレコード数
 $raw_data_buffer = []; // raw_api_data テーブルに挿入するためのバッファ
 $products_buffer_temp = []; // products テーブルに挿入するためのデータと api_product_id の一時マッピング
-$api_product_ids_in_batch = []; // 現在のバッチで処理するapi_product_idのリスト
+// $api_product_ids_in_batch = []; // この変数は使われていなかったので削除またはコメントアウト
+
+// APIから取得すべき総件数 (初回APIコールで設定される)
+$total_api_results = PHP_INT_MAX; // 初期値はPHPの最大整数で無限ループを回避
 
 try {
-    while (true) {
-        $current_offset = ($current_page - 1) * API_RECORDS_PER_REQUEST + 1;
-        $logger->log("Duga APIからアイテムを取得中... (ページ: {$current_page}, offset: {$current_offset}, 件数: " . API_RECORDS_PER_REQUEST . ")");
+    while ($total_processed_records < $total_api_results) {
+        $logger->log("Duga APIからアイテムを取得中... (offset: {$current_offset}, 件数: " . API_RECORDS_PER_REQUEST . ")");
 
         $additional_api_params = [];
         if ($start_date) $additional_api_params['release_date_from'] = $start_date;
@@ -137,9 +140,22 @@ try {
         if ($sort)       $additional_api_params['sort'] = $sort;
 
         // Duga APIからアイテムデータを取得 (DugaApiClientクラスを使用)
-        $api_data_batch = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
+        // ここで DugaApiClient::getItems が ['items' => [...], 'total_hits' => N] を返すことを期待
+        $api_response = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
+        $api_data_batch = $api_response['items'] ?? [];
+        $current_total_hits = $api_response['total_hits'] ?? 0;
 
-        // APIからのデータが空の場合、全てのデータ取得が完了したと判断しループを終了
+        // 初回リクエスト時に全体のヒット数を設定
+        if ($current_offset === 1) {
+            $total_api_results = $current_total_hits;
+            $logger->log("Duga APIから報告された検索結果総数: {$total_api_results}件");
+            if ($total_api_results === 0) {
+                $logger->log("検索結果が0件のため、処理を終了します。");
+                break; // 0件ならループを抜ける
+            }
+        }
+
+        // APIからのデータが空の場合、またはこれ以上データがないと判断できる場合、ループを終了
         if (empty($api_data_batch)) {
             $logger->log("Duga APIから追加のアイテムデータが取得できませんでした。全てのAPIデータの取得が完了しました。");
             break; // ループを抜ける
@@ -147,7 +163,7 @@ try {
 
         // 取得したAPIデータをraw_api_dataとproductsの両方のバッファに準備
         foreach ($api_data_batch as $api_record_wrapper) { // APIからの各レコードのラッパー
-            // ここで 'item' キーの下の実際のデータを取得
+            // ここで 'item' キーの下の実際のデータを取得 (Duga APIの一般的なレスポンス構造)
             $api_record = $api_record_wrapper['item'] ?? null;
 
             if (empty($api_record)) {
@@ -155,7 +171,7 @@ try {
                 continue;
             }
 
-            $content_id = $api_record['productid'] ?? null; 
+            $content_id = $api_record['productid'] ?? null;
             
             if (empty($content_id)) {
                 $logger->error("警告: productid が空のためレコードをスキップします: " . json_encode($api_record));
@@ -171,7 +187,8 @@ try {
                 'updated_at'     => date('Y-m-d H:i:s')
             ];
             $raw_data_buffer[] = $raw_data_entry;
-            $api_product_ids_in_batch[] = $content_id; // 製品IDを記録
+            // $api_product_ids_in_batch[] はDbBatchInsert::getRawApiDataIdで使用されるため不要
+            // これはDbBatchInsert内で処理されるべきロジックです。
 
             // products テーブル用の初期データ準備
             // ジャンルデータの堅牢な抽出
@@ -208,7 +225,6 @@ try {
                 $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
 
                 // 2. 挿入された raw_api_data のIDを取得し、products_buffer_tempに紐付ける
-                // 各レコードごとにIDを取得する必要があるため、ループ内で取得
                 $final_products_for_upsert = [];
                 foreach ($products_buffer_temp as $api_id => $product_data) {
                     $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
@@ -232,20 +248,18 @@ try {
                 $logger->log("{$total_processed_records}件のデータをデータベースに正常に処理しました。次のバッチ処理に進みます。");
 
             } catch (Exception $e) {
-                // DbBatchInsertのinsertOrUpdate内でトランザクションが管理されているため、
-                // ここでは単純にエラーをログに記録し、例外を再スローします。
                 $logger->error("データベースUPSERT中にエラーが発生しました: " . $e->getMessage());
-                throw $e; // 上位のtry-catchブロックにエラーを再スロー
+                // この例外は上位のtry-catchブロックで捕捉される
+                throw $e;
             }
 
             // バッファをクリア
             $raw_data_buffer = [];
             $products_buffer_temp = [];
-            $api_product_ids_in_batch = [];
         }
 
-        $current_page++;
-        sleep(1); // APIへのリクエスト頻度を調整するため1秒待機
+        $current_offset += API_RECORDS_PER_REQUEST; // 次のオフセットへ
+        sleep(1); // APIへのリクエスト頻度を調整するため1秒待機 (API規約に従う)
     }
 
     // ループ終了後、バッファに残っている未保存のデータを処理
@@ -285,7 +299,8 @@ try {
 
         } catch (Exception $e) {
             $logger->error("データベースUPSERT中にエラーが発生しました。(最終バッチ): " . $e->getMessage());
-            throw $e; // 上位のtry-catchブロックにエラーを再スロー
+            // この例外も上位のtry-catchブロックで捕捉される
+            throw $e;
         }
     }
 
@@ -293,6 +308,7 @@ try {
     $logger->log("合計処理済みレコード数: {$total_processed_records}件");
 
 } catch (Exception $e) {
+    // スクリプト全体でのエラーハンドリング
     $logger->error("Duga API処理中に致命的なエラーが発生しました: " . $e->getMessage());
     $logger->error("エラー発生箇所: ファイル " . $e->getFile() . " 行 " . $e->getLine());
 } finally {
