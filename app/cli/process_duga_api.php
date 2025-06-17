@@ -19,7 +19,7 @@ use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert;
-use PDOException; // PDOExceptionをuseしておく
+// use PDOException; // PDOExceptionをuseしておく
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
