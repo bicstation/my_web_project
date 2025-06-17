@@ -42,6 +42,8 @@ const DEFAULT_BANNER_ID = '01';
 const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーターの上限
 const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
 const API_SOURCE_NAME = 'duga';       // このAPIのソース名
+// APIリクエストの連続失敗回数がこの値に達したら、本当に終了と判断する閾値
+const MAX_CONSECUTIVE_EMPTY_RESPONSES = 5; 
 
 // .env から Duga API の設定を取得
 $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search';
@@ -167,7 +169,7 @@ function processClassificationData(DbBatchInsert $dbBatchInserter, Logger $logge
                 $updateSet[] = "`{$col}` = :{$col}";
             }
             if (empty($updateSet)) { // 更新するカラムがなければ何もしない
-            return $existingId;
+                return $existingId;
             }
 
             $stmt = $dbBatchInserter->getDatabase()->getConnection()->prepare(
@@ -257,9 +259,13 @@ $product_actors_buffer = [];
 
 // APIから取得すべき総件数 (初回APIコールで設定される)
 $total_api_results = PHP_INT_MAX; // 初期値はPHPの最大整数で無限ループを回避
+// APIリクエストの連続失敗カウンター
+$consecutive_empty_responses = 0;
 
 try {
-    while ($total_processed_records < $total_api_results) {
+    // $total_processed_records は $total_api_results を超えることはありえないので、
+    // $total_api_results が設定されたら、それを基にループを続ける
+    while ($total_processed_records < $total_api_results || $current_offset === 1) { // 初回リクエストは必ず実行
         $logger->log("Duga APIからアイテムを取得中... (offset: {$current_offset}, 件数: " . API_RECORDS_PER_REQUEST . ")");
 
         $additional_api_params = [];
@@ -289,9 +295,22 @@ try {
             }
         }
 
+        // ここが重要な変更点
         if (empty($api_data_batch)) {
-            $logger->log("Duga APIから追加のアイテムデータが取得できませんでした。全てのAPIデータの取得が完了しました。");
-            break; // ループを抜ける
+            $consecutive_empty_responses++;
+            $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
+            // APIの総件数にまだ達していないのに空が返ってきた場合、かつ連続失敗回数が閾値未満の場合
+            if ($total_processed_records < $total_api_results && $consecutive_empty_responses < MAX_CONSECUTIVE_EMPTY_RESPONSES) {
+                $logger->log("APIの総件数にまだ達していないため、リトライします (offset: {$current_offset})");
+                sleep(1); // 短い休憩を挟むことで、レートリミットを回避できる可能性
+                continue; // 現在のオフセットで次のループへ（再度APIリクエスト）
+            } else {
+                $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数を超過したため、処理を終了します。");
+                break; // ループを抜ける
+            }
+        } else {
+            // データが正常に取得できた場合、連続空レスポンスカウンターをリセット
+            $consecutive_empty_responses = 0;
         }
 
         // 取得したAPIデータをraw_api_dataのバッファに準備
@@ -322,7 +341,6 @@ try {
 
             // --- products テーブルおよび分類データのバッファリングロジックは、このフェーズではデータベースに挿入しないが、
             //     後続フェーズでの使用のため、データの抽出とバッファリング自体は残しておく（必要に応じてコメントアウト可）。
-            //     ただし、今回の目的はraw_api_dataへの特化なので、厳密には以下のブロックは削除またはコメントアウトしても問題ない。
             //     今回は、APIレスポンスの構造解析とデータ抽出のロジックとして残します。
 
             // products テーブル用のデータ準備 (このフェーズではDBに挿入しない)
@@ -366,8 +384,8 @@ try {
                 'jacket_url_small'    => $extractImageUrl($api_record['jacketimage'] ?? [], 'small'),
                 'jacket_url_medium'   => $extractImageUrl($api_record['jacketimage'] ?? [], 'midium'),
                 'jacket_url_large'    => $extractImageUrl($api_record['jacketimage'] ?? [], 'large'),
-                'sample_movie_url'    => $extractImageUrl($api_record['samplemovie'] ?? [], 'midium')['movie'] ?? null, // samplemovieはさらにネスト
-                'sample_movie_capture_url' => $extractImageUrl($api_record['samplemovie'] ?? [], 'midium')['capture'] ?? null,
+                'sample_movie_url'    => (isset($api_record['samplemovie'][0]['data']['movie']) ? $api_record['samplemovie'][0]['data']['movie'] : null), // samplemovieはさらにネスト
+                'sample_movie_capture_url' => (isset($api_record['samplemovie'][0]['data']['capture']) ? $api_record['samplemovie'][0]['data']['capture'] : null),
                 'source_api'          => API_SOURCE_NAME,
                 'created_at'          => date('Y-m-d H:i:s'),
                 'updated_at'          => date('Y-m-d H:i:s')
@@ -529,6 +547,9 @@ try {
                 $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
                 $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
 
+                // バッファをクリア
+                $raw_data_buffer = [];
+
                 // --- ここから下の行は、このフェーズではコメントアウトまたは削除します ---
                 // // 2. products_buffer_temp に raw_api_data_id を紐付け、products テーブルへのUPSERTを準備
                 // $final_products_for_upsert = [];
@@ -557,6 +578,7 @@ try {
                 // } else {
                 //     $logger->log("products テーブルにUPSERTするデータがありませんでした。");
                 // }
+                // $products_buffer_temp = []; // productsバッファもクリア
 
                 // // 4. 分類テーブル (categories, genres, labels, directors, series, actors) の処理
                 // // product_id は products の product_id を使用し、_duga_id で検索してDBのIDを取得し、紐付けます
@@ -567,7 +589,8 @@ try {
                 //         $category_map[$duga_id] = $db_id;
                 //     }
                 // }
-                
+                // $categories_buffer = [];
+
                 // $genre_map = []; // duga_genre_id => db_genre_id
                 // foreach ($genres_buffer as $duga_id => $data) {
                 //     $db_id = processClassificationData($dbBatchInserter, $logger, 'genres', $data);
@@ -575,6 +598,7 @@ try {
                 //         $genre_map[$duga_id] = $db_id;
                 //     }
                 // }
+                // $genres_buffer = [];
 
                 // $label_map = [];
                 // foreach ($labels_buffer as $duga_id => $data) {
@@ -583,6 +607,7 @@ try {
                 //         $label_map[$duga_id] = $db_id;
                 //     }
                 // }
+                // $labels_buffer = [];
 
                 // $director_map = [];
                 // foreach ($directors_buffer as $duga_id => $data) {
@@ -591,6 +616,7 @@ try {
                 //         $director_map[$duga_id] = $db_id;
                 //     }
                 // }
+                // $directors_buffer = [];
 
                 // $series_map = [];
                 // foreach ($series_buffer as $duga_id => $data) {
@@ -599,6 +625,7 @@ try {
                 //         $series_map[$duga_id] = $db_id;
                 //     }
                 // }
+                // $series_buffer = [];
 
                 // $actor_map = [];
                 // foreach ($actors_buffer as $duga_id => $data) {
@@ -607,6 +634,7 @@ try {
                 //         $actor_map[$duga_id] = $db_id;
                 //     }
                 // }
+                // $actors_buffer = [];
 
                 // // 5. 中間テーブルへのUPSERT
                 // $final_product_categories = [];
@@ -620,7 +648,9 @@ try {
                 // }
                 // if (!empty($final_product_categories)) {
                 //     $dbBatchInserter->insertOrUpdate('product_categories', $final_product_categories, [], ['product_id', 'category_id']);
+                //     $logger->log(count($final_product_categories) . "件の商品カテゴリデータを 'product_categories' にUPSERTしました。");
                 // }
+                // $product_categories_buffer = [];
 
                 // $final_product_genres = [];
                 // foreach ($product_genres_buffer as $entry) {
@@ -633,7 +663,9 @@ try {
                 // }
                 // if (!empty($final_product_genres)) {
                 //     $dbBatchInserter->insertOrUpdate('product_genres', $final_product_genres, [], ['product_id', 'genre_id']);
+                //     $logger->log(count($final_product_genres) . "件の商品ジャンルデータを 'product_genres' にUPSERTしました。");
                 // }
+                // $product_genres_buffer = [];
                 
                 // $final_product_labels = [];
                 // foreach ($product_labels_buffer as $entry) {
@@ -646,7 +678,9 @@ try {
                 // }
                 // if (!empty($final_product_labels)) {
                 //     $dbBatchInserter->insertOrUpdate('product_labels', $final_product_labels, [], ['product_id', 'label_id']);
+                //     $logger->log(count($final_product_labels) . "件の商品レーベルデータを 'product_labels' にUPSERTしました。");
                 // }
+                // $product_labels_buffer = [];
 
                 // $final_product_directors = [];
                 // foreach ($product_directors_buffer as $entry) {
@@ -659,7 +693,9 @@ try {
                 // }
                 // if (!empty($final_product_directors)) {
                 //     $dbBatchInserter->insertOrUpdate('product_directors', $final_product_directors, [], ['product_id', 'director_id']);
+                //     $logger->log(count($final_product_directors) . "件の商品監督データを 'product_directors' にUPSERTしました。");
                 // }
+                // $product_directors_buffer = [];
 
                 // $final_product_series = [];
                 // foreach ($product_series_buffer as $entry) {
@@ -669,10 +705,13 @@ try {
                 //             'series_id' => $series_map[$entry['series_duga_id']]
                 //         ];
                 //     }
+                //     
                 // }
                 // if (!empty($final_product_series)) {
                 //     $dbBatchInserter->insertOrUpdate('product_series', $final_product_series, [], ['product_id', 'series_id']);
+                //     $logger->log(count($final_product_series) . "件の商品シリーズデータを 'product_series' にUPSERTしました。");
                 // }
+                // $product_series_buffer = [];
 
                 // $final_product_actors = [];
                 // foreach ($product_actors_buffer as $entry) {
@@ -685,66 +724,96 @@ try {
                 // }
                 // if (!empty($final_product_actors)) {
                 //     $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
+                //     $logger->log(count($final_product_actors) . "件の商品女優データを 'product_actors' にUPSERTしました。");
                 // }
+                // $product_actors_buffer = [];
                 // --- ここから上の行は、このフェーズではコメントアウトまたは削除します ---
 
-
-                $pdo->commit(); // トランザクションコミット
+                $pdo->commit();
                 $logger->log("バッチ処理が正常にコミットされました。");
-
-                // raw_api_data のバッファをクリア
-                $raw_data_buffer = [];
-
-                // 他のバッファもクリアしておくことで、メモリリークや誤動作を防ぎます
-                $products_buffer_temp = [];
-                $categories_buffer = [];
-                $genres_buffer = [];
-                $labels_buffer = [];
-                $directors_buffer = [];
-                $series_buffer = [];
-                $actors_buffer = [];
-                $product_categories_buffer = [];
-                $product_genres_buffer = [];
-                $product_labels_buffer = [];
-                $product_directors_buffer = [];
-                $product_series_buffer = [];
-                $product_actors_buffer = [];
 
             } catch (PDOException $e) {
                 $pdo->rollBack();
-                $logger->error("データベース処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
-                // 生データ取得に致命的なエラーの場合は続行しても意味がないため、再スロー
+                $logger->error("データベース処理中にエラーが発生し、トランザクションがロールバックされました: " . $e->getMessage());
+                // このエラーが致命的であると判断し、処理を終了
                 throw $e; 
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                $logger->error("予期せぬエラーが発生し、トランザクションがロールバックされました: " . $e->getMessage());
+                throw $e;
             }
         }
+        
         $total_processed_records += count($api_data_batch);
-        $current_offset++; // 次のオフセットへ
+        $logger->log("現在までに処理したレコード総数: {$total_processed_records}件 / 総API結果: {$total_api_results}件");
+        
+        // 正常なデータ取得の場合のみオフセットを増やす
+        // empty($api_data_batch) の場合は continue でオフセットを増やさず再試行
+        if (!empty($api_data_batch)) {
+            $current_offset++;
+        }
     } // while ループ終了
     
-    // ループ終了後、残っているバッファをフラッシュ (raw_api_data のみ)
+    // ループ終了後、残っているバッファを処理
     if (!empty($raw_data_buffer)) {
-        $logger->log("スクリプト終了前に残りのバッファ (" . count($raw_data_buffer) . "件) を処理します。");
+        $logger->log("残りのバッファ (" . count($raw_data_buffer) . "件) をデータベースにUPSERTします。");
         $pdo->beginTransaction();
         try {
             $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
             $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
-            $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
+            $logger->log(count($raw_data_buffer) . "件の残りの生データを 'raw_api_data' にUPSERTしました。");
+            
+            // --- ここから下の残りのバッファ処理もコメントアウト/削除 ---
+            // // products_buffer_temp に raw_api_data_id を紐付け
+            // $final_products_for_upsert = [];
+            // foreach ($products_buffer_temp as $api_id => $product_data) {
+            //     $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
+            //     if ($raw_api_data_id !== null) {
+            //         $product_data['raw_api_data_id'] = $raw_api_data_id;
+            //         $final_products_for_upsert[] = $product_data;
+            //     } else {
+            //         $logger->error("警告: api_product_id '{$api_id}' の raw_api_data_id が見つかりませんでした。最終バッチでproducts テーブルにUPSERTされません。");
+            //     }
+            // }
+
+            // $products_upsert_columns = [
+            //     'title', 'original_title', 'caption', 'release_date', 'maker_name', 'itemno', 'price', 'volume',
+            //     'url', 'affiliate_url', 'image_url_small', 'image_url_medium', 'image_url_large',
+            //     'jacket_url_small', 'jacket_url_medium', 'jacket_url_large',
+            //     'sample_movie_url', 'sample_movie_capture_url', 'source_api', 'raw_api_data_id', 'updated_at'
+            // ];
+
+            // if (!empty($final_products_for_upsert)) {
+            //     $dbBatchInserter->insertOrUpdate('products', $final_products_for_upsert, $products_upsert_columns);
+            //     $logger->log(count($final_products_for_upsert) . "件の残りの商品データを 'products' にUPSERTしました。");
+            // }
+
+            // // 分類データと中間テーブルの最終処理 (コメントアウト/削除)
+            // // ... (processClassificationData呼び出しと中間テーブルUPSERTロジックは上記参照) ...
+            // --- ここまで残りのバッファ処理もコメントアウト/削除 ---
+
             $pdo->commit();
             $logger->log("残りのバッチ処理が正常にコミットされました。");
         } catch (PDOException $e) {
             $pdo->rollBack();
-            $logger->error("スクリプト終了時のデータベース処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+            $logger->error("最終バッチ処理中にエラーが発生し、トランザクションがロールバックされました: " . $e->getMessage());
+            throw $e;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $logger->error("最終バッチ処理中に予期せぬエラーが発生し、トランザクションがロールバックされました: " . $e->getMessage());
+            throw $e;
         }
     }
 
-    $logger->log("Duga APIからの全生データの取得と保存が完了しました。");
+    $logger->log("全てのDuga APIからのデータ取得とデータベース保存処理が完了しました。");
 
 } catch (Exception $e) {
-    $logger->error("主要処理ループ中に致命的なエラーが発生しました: " . $e->getMessage());
-    error_log("致命的なエラー: " . $e->getMessage());
+    $logger->error("処理中に致命的なエラーが発生しました: " . $e->getMessage());
+    echo "エラー: スクリプトの実行中に問題が発生しました。詳細はログファイルを確認してください。\n";
+    exit(1); // エラー終了
 } finally {
-    if ($database) {
-        $database->closeConnection();
-    }
-    $logger->log("スクリプト実行終了。");
+    // データベース接続を閉じる (PDOはスクリプト終了時に自動的に閉じられるが、明示的に行うことも可能)
+    $database = null; // PDOインスタンスへの参照を解除
+    $logger->log("データベース接続を閉じました。スクリプト終了。");
 }
+?>
