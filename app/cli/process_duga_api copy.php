@@ -40,8 +40,8 @@ const DEFAULT_SORT_PARAM = 'favorite';
 const DEFAULT_BANNER_ID = '01';
 // Duga APIが一度に返すレコード数 (APIのドキュメントを確認し、最大値を設定すること。通常100〜500)
 const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーターの上限
-const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
-const API_SOURCE_NAME = 'duga';       // このAPIのソース名
+const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
+const API_SOURCE_NAME = 'duga';      // このAPIのソース名
 
 // .env から Duga API の設定を取得
 $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search';
@@ -111,7 +111,7 @@ $logger->log("CLI Arguments processed: " . json_encode([
 
 
 // -----------------------------------------------------
-// 補助関数: 分類データの処理 (今回は使わないが残しておく)
+// 補助関数: 分類データの処理 (重複登録防止とID取得)
 // -----------------------------------------------------
 /**
  * 分類データをデータベースにUPSERTし、そのIDを返す。
@@ -231,23 +231,18 @@ function processClassificationData(DbBatchInsert $dbBatchInserter, Logger $logge
 $current_offset = 1; // Duga APIの offset は1から始まる
 $total_processed_records = 0; // 全体の処理済みレコード数
 $raw_data_buffer = []; // raw_api_data テーブルに挿入するためのバッファ
+$products_buffer_temp = []; // products テーブルに挿入するためのデータと api_product_id の一時マッピング
 
-// 注意: このスクリプトはraw_api_dataへの保存に特化します。
-// その他の分類データや中間テーブルのバッファは、このフェーズでは使用しません。
-// ただし、APIレスポンスのパース時に分類データを一時的に取得するロジック自体は残しておいても構いません。
-// products_buffer_temp も今回のフェーズでは不要ですが、後続フェーズの参考のため残しておきます。
-$products_buffer_temp = []; 
-
-// 分類データ用の一時バッファ (このフェーズでは使用しないが、取得ロジックは保持)
-$categories_buffer = []; 
+// 分類データ用の一時バッファ
+$categories_buffer = []; // key: category_name or duga_category_id, value: ['name' => ..., 'slug' => ...]
 $genres_buffer = [];
 $labels_buffer = [];
 $directors_buffer = [];
 $series_buffer = [];
 $actors_buffer = [];
 
-// 中間テーブル用の一時バッファ (このフェーズでは使用しないが、取得ロジックは保持)
-$product_categories_buffer = []; 
+// 中間テーブル用の一時バッファ
+$product_categories_buffer = []; // ['product_id' => ..., 'category_id' => ...]
 $product_genres_buffer = [];
 $product_labels_buffer = [];
 $product_directors_buffer = [];
@@ -294,7 +289,7 @@ try {
             break; // ループを抜ける
         }
 
-        // 取得したAPIデータをraw_api_dataのバッファに準備
+        // 取得したAPIデータをraw_api_dataとproducts、および関連テーブルのバッファに準備
         foreach ($api_data_batch as $api_record_wrapper) {
             $api_record = $api_record_wrapper['item'] ?? null;
 
@@ -310,7 +305,7 @@ try {
                 continue; // productid がないレコードはスキップ
             }
 
-            // raw_api_data テーブル用のデータ準備 (これはこのフェーズで必要)
+            // raw_api_data テーブル用のデータ準備
             $raw_data_entry = [
                 'source_name'    => API_SOURCE_NAME,
                 'api_product_id' => $content_id,
@@ -320,15 +315,10 @@ try {
             ];
             $raw_data_buffer[] = $raw_data_entry;
 
-            // --- products テーブルおよび分類データのバッファリングロジックは、このフェーズではデータベースに挿入しないが、
-            //     後続フェーズでの使用のため、データの抽出とバッファリング自体は残しておく（必要に応じてコメントアウト可）。
-            //     ただし、今回の目的はraw_api_dataへの特化なので、厳密には以下のブロックは削除またはコメントアウトしても問題ない。
-            //     今回は、APIレスポンスの構造解析とデータ抽出のロジックとして残します。
-
-            // products テーブル用のデータ準備 (このフェーズではDBに挿入しない)
+            // products テーブル用のデータ準備
             $release_date = null;
             if (isset($api_record['opendate'])) {
-                $release_date = str_replace('/', '-', $api_record['opendate']); //YYYY/MM/DD -> YYYY-MM-DD
+                $release_date = str_replace('/', '-', $api_record['opendate']); // YYYY/MM/DD -> YYYY-MM-DD
             } elseif (isset($api_record['releasedate'])) {
                 $release_date = str_replace('/', '-', $api_record['releasedate']);
             }
@@ -374,7 +364,7 @@ try {
             ];
             $products_buffer_temp[$content_id] = $product_entry_temp;
 
-            // 分類データと中間テーブルのデータ準備 (このフェーズではDBに挿入しない)
+            // 分類データと中間テーブルのデータ準備
             // categories
             if (isset($api_record['category']) && is_array($api_record['category'])) {
                 foreach ($api_record['category'] as $category_data_wrapper) {
@@ -383,16 +373,17 @@ try {
                         $category_name = trim($category_detail['name']);
                         $category_duga_id = trim($category_detail['id']);
                         if (!empty($category_name) && !empty($category_duga_id)) {
-                            $category_slug = str_replace(' ', '-', strtolower($category_name));
-                            $categories_buffer[$category_duga_id] = [ 
+                            // スラグの生成 (URLフレンドリーな文字列)
+                            $category_slug = str_replace(' ', '-', strtolower($category_name)); // 例: "M男" -> "m-otoko" など、より堅牢なスラグ生成ロジックが必要であれば追加
+                            $categories_buffer[$category_duga_id] = [ // ユニークキーをduga_category_idにする
                                 'name' => $category_name,
                                 'slug' => $category_slug,
                                 'duga_category_id' => $category_duga_id,
-                                'level' => 0 
+                                'level' => 0 // Duga APIのカテゴリは通常大分類と仮定
                             ];
                             $product_categories_buffer[] = [
                                 'product_id' => $content_id,
-                                'category_duga_id' => $category_duga_id 
+                                'category_duga_id' => $category_duga_id // 後で解決するための仮のキー
                             ];
                         }
                     }
@@ -400,6 +391,11 @@ try {
             }
             
             // genres (Duga APIでは'category'の下にあるが、意味的にジャンルとして扱う)
+            // このロジックは上記categoryと重複する可能性があるため、APIレスポンスの正確な構造に基づいて調整してください。
+            // Duga APIでは通常 'category' がカテゴリとジャンルを兼ねる傾向があります。
+            // もし明確な 'genre' フィールドがある場合は、ここにロジックを追加します。
+            // 現状、raw_api_dataの例から判断すると、`category`がジャンル的な役割も兼ねている可能性が高いです。
+            // ここでは、`category`を`categories`と`genres`の両方に紐付けると仮定します。
             if (isset($api_record['category']) && is_array($api_record['category'])) {
                 foreach ($api_record['category'] as $category_data_wrapper) {
                     $category_detail = $category_data_wrapper['data'] ?? null;
@@ -421,6 +417,7 @@ try {
                     }
                 }
             }
+
 
             // labels
             if (isset($api_record['label']) && is_array($api_record['label'])) {
@@ -513,8 +510,6 @@ try {
                     }
                 }
             }
-            // --- ここまでAPIレスポンスの構造解析とデータ抽出のロジック ---
-
         } // foreach ($api_data_batch as $api_record_wrapper) 終了
 
         // バッファが指定したチャンクサイズに達したら、データベースへのUPSERTを実行
@@ -524,227 +519,386 @@ try {
             // トランザクション開始
             $pdo->beginTransaction();
             try {
-                // 1. raw_api_data テーブルへのUPSERT (これは残す)
+                // 1. raw_api_data テーブルへのUPSERT
                 $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
                 $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
                 $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
 
-                // --- ここから下の行は、このフェーズではコメントアウトまたは削除します ---
-                // // 2. products_buffer_temp に raw_api_data_id を紐付け、products テーブルへのUPSERTを準備
-                // $final_products_for_upsert = [];
-                // foreach ($products_buffer_temp as $api_id => $product_data) {
-                //     $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
-                //     if ($raw_api_data_id !== null) {
-                //         $product_data['raw_api_data_id'] = $raw_api_data_id;
-                //         $final_products_for_upsert[] = $product_data;
-                //     } else {
-                //         $logger->error("警告: api_product_id '{$api_id}' の raw_api_data_id が見つかりませんでした。products テーブルにUPSERTされません。");
-                //     }
-                // }
+                // 2. products_buffer_temp に raw_api_data_id を紐付け、products テーブルへのUPSERTを準備
+                $final_products_for_upsert = [];
+                foreach ($products_buffer_temp as $api_id => $product_data) {
+                    $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
+                    if ($raw_api_data_id !== null) {
+                        $product_data['raw_api_data_id'] = $raw_api_data_id;
+                        $final_products_for_upsert[] = $product_data;
+                    } else {
+                        $logger->error("警告: api_product_id '{$api_id}' の raw_api_data_id が見つかりませんでした。products テーブルにUPSERTされません。");
+                    }
+                }
 
-                // // products_upsert_columns を新しいスキーマに合わせて更新
-                // $products_upsert_columns = [
-                //     'title', 'original_title', 'caption', 'release_date', 'maker_name', 'itemno', 'price', 'volume',
-                //     'url', 'affiliate_url', 'image_url_small', 'image_url_medium', 'image_url_large',
-                //     'jacket_url_small', 'jacket_url_medium', 'jacket_url_large',
-                //     'sample_movie_url', 'sample_movie_capture_url', 'source_api', 'raw_api_data_id', 'updated_at'
-                // ];
+                // products_upsert_columns を新しいスキーマに合わせて更新
+                $products_upsert_columns = [
+                    'title', 'original_title', 'caption', 'release_date', 'maker_name', 'itemno', 'price', 'volume',
+                    'url', 'affiliate_url', 'image_url_small', 'image_url_medium', 'image_url_large',
+                    'jacket_url_small', 'jacket_url_medium', 'jacket_url_large',
+                    'sample_movie_url', 'sample_movie_capture_url', 'source_api', 'raw_api_data_id', 'updated_at'
+                ];
                 
-                // // 3. products テーブルへのUPSERT
-                // if (!empty($final_products_for_upsert)) {
-                //     $dbBatchInserter->insertOrUpdate('products', $final_products_for_upsert, $products_upsert_columns);
-                //     $logger->log(count($final_products_for_upsert) . "件の商品データを 'products' にUPSERTしました。");
-                // } else {
-                //     $logger->log("products テーブルにUPSERTするデータがありませんでした。");
-                // }
+                // 3. products テーブルへのUPSERT
+                if (!empty($final_products_for_upsert)) {
+                    $dbBatchInserter->insertOrUpdate('products', $final_products_for_upsert, $products_upsert_columns);
+                    $logger->log(count($final_products_for_upsert) . "件の商品データを 'products' にUPSERTしました。");
+                } else {
+                    $logger->log("products テーブルにUPSERTするデータがありませんでした。");
+                }
 
-                // // 4. 分類テーブル (categories, genres, labels, directors, series, actors) の処理
-                // // product_id は products の product_id を使用し、_duga_id で検索してDBのIDを取得し、紐付けます
-                // $category_map = []; // duga_category_id => db_category_id
-                // foreach ($categories_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'categories', $data);
-                //     if ($db_id !== null) {
-                //         $category_map[$duga_id] = $db_id;
-                //     }
-                // }
+                // 4. 分類テーブル (categories, genres, labels, directors, series, actors) の処理
+                // product_id は products の product_id を使用し、_duga_id で検索してDBのIDを取得し、紐付けます
+                $category_map = []; // duga_category_id => db_category_id
+                foreach ($categories_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'categories', $data);
+                    if ($db_id !== null) {
+                        $category_map[$duga_id] = $db_id;
+                    }
+                }
                 
-                // $genre_map = []; // duga_genre_id => db_genre_id
-                // foreach ($genres_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'genres', $data);
-                //     if ($db_id !== null) {
-                //         $genre_map[$duga_id] = $db_id;
-                //     }
-                // }
+                $genre_map = []; // duga_genre_id => db_genre_id
+                foreach ($genres_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'genres', $data);
+                    if ($db_id !== null) {
+                        $genre_map[$duga_id] = $db_id;
+                    }
+                }
 
-                // $label_map = [];
-                // foreach ($labels_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'labels', $data);
-                //     if ($db_id !== null) {
-                //         $label_map[$duga_id] = $db_id;
-                //     }
-                // }
+                $label_map = [];
+                foreach ($labels_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'labels', $data);
+                    if ($db_id !== null) {
+                        $label_map[$duga_id] = $db_id;
+                    }
+                }
 
-                // $director_map = [];
-                // foreach ($directors_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'directors', $data);
-                //     if ($db_id !== null) {
-                //         $director_map[$duga_id] = $db_id;
-                //     }
-                // }
+                $director_map = [];
+                foreach ($directors_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'directors', $data);
+                    if ($db_id !== null) {
+                        $director_map[$duga_id] = $db_id;
+                    }
+                }
 
-                // $series_map = [];
-                // foreach ($series_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'series', $data);
-                //     if ($db_id !== null) {
-                //         $series_map[$duga_id] = $db_id;
-                //     }
-                // }
+                $series_map = [];
+                foreach ($series_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'series', $data);
+                    if ($db_id !== null) {
+                        $series_map[$duga_id] = $db_id;
+                    }
+                }
 
-                // $actor_map = [];
-                // foreach ($actors_buffer as $duga_id => $data) {
-                //     $db_id = processClassificationData($dbBatchInserter, $logger, 'actors', $data);
-                //     if ($db_id !== null) {
-                //         $actor_map[$duga_id] = $db_id;
-                //     }
-                // }
+                $actor_map = [];
+                foreach ($actors_buffer as $duga_id => $data) {
+                    $db_id = processClassificationData($dbBatchInserter, $logger, 'actors', $data);
+                    if ($db_id !== null) {
+                        $actor_map[$duga_id] = $db_id;
+                    }
+                }
 
-                // // 5. 中間テーブルへのUPSERT
-                // $final_product_categories = [];
-                // foreach ($product_categories_buffer as $entry) {
-                //     if (isset($category_map[$entry['category_duga_id']])) {
-                //         $final_product_categories[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'category_id' => $category_map[$entry['category_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_categories)) {
-                //     $dbBatchInserter->insertOrUpdate('product_categories', $final_product_categories, [], ['product_id', 'category_id']);
-                // }
+                // 5. 中間テーブルへのUPSERT
+                $final_product_categories = [];
+                foreach ($product_categories_buffer as $entry) {
+                    if (isset($category_map[$entry['category_duga_id']])) {
+                        $final_product_categories[] = [
+                            'product_id' => $entry['product_id'],
+                            'category_id' => $category_map[$entry['category_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_categories)) {
+                    $dbBatchInserter->insertOrUpdate('product_categories', $final_product_categories, [], ['product_id', 'category_id']);
+                }
 
-                // $final_product_genres = [];
-                // foreach ($product_genres_buffer as $entry) {
-                //     if (isset($genre_map[$entry['genre_duga_id']])) {
-                //         $final_product_genres[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'genre_id' => $genre_map[$entry['genre_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_genres)) {
-                //     $dbBatchInserter->insertOrUpdate('product_genres', $final_product_genres, [], ['product_id', 'genre_id']);
-                // }
+                $final_product_genres = [];
+                foreach ($product_genres_buffer as $entry) {
+                    if (isset($genre_map[$entry['genre_duga_id']])) {
+                        $final_product_genres[] = [
+                            'product_id' => $entry['product_id'],
+                            'genre_id' => $genre_map[$entry['genre_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_genres)) {
+                    $dbBatchInserter->insertOrUpdate('product_genres', $final_product_genres, [], ['product_id', 'genre_id']);
+                }
                 
-                // $final_product_labels = [];
-                // foreach ($product_labels_buffer as $entry) {
-                //     if (isset($label_map[$entry['label_duga_id']])) {
-                //         $final_product_labels[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'label_id' => $label_map[$entry['label_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_labels)) {
-                //     $dbBatchInserter->insertOrUpdate('product_labels', $final_product_labels, [], ['product_id', 'label_id']);
-                // }
+                $final_product_labels = [];
+                foreach ($product_labels_buffer as $entry) {
+                    if (isset($label_map[$entry['label_duga_id']])) {
+                        $final_product_labels[] = [
+                            'product_id' => $entry['product_id'],
+                            'label_id' => $label_map[$entry['label_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_labels)) {
+                    $dbBatchInserter->insertOrUpdate('product_labels', $final_product_labels, [], ['product_id', 'label_id']);
+                }
 
-                // $final_product_directors = [];
-                // foreach ($product_directors_buffer as $entry) {
-                //     if (isset($director_map[$entry['director_duga_id']])) {
-                //         $final_product_directors[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'director_id' => $director_map[$entry['director_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_directors)) {
-                //     $dbBatchInserter->insertOrUpdate('product_directors', $final_product_directors, [], ['product_id', 'director_id']);
-                // }
+                $final_product_directors = [];
+                foreach ($product_directors_buffer as $entry) {
+                    if (isset($director_map[$entry['director_duga_id']])) {
+                        $final_product_directors[] = [
+                            'product_id' => $entry['product_id'],
+                            'director_id' => $director_map[$entry['director_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_directors)) {
+                    $dbBatchInserter->insertOrUpdate('product_directors', $final_product_directors, [], ['product_id', 'director_id']);
+                }
 
-                // $final_product_series = [];
-                // foreach ($product_series_buffer as $entry) {
-                //     if (isset($series_map[$entry['series_duga_id']])) {
-                //         $final_product_series[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'series_id' => $series_map[$entry['series_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_series)) {
-                //     $dbBatchInserter->insertOrUpdate('product_series', $final_product_series, [], ['product_id', 'series_id']);
-                // }
+                $final_product_series = [];
+                foreach ($product_series_buffer as $entry) {
+                    if (isset($series_map[$entry['series_duga_id']])) {
+                        $final_product_series[] = [
+                            'product_id' => $entry['product_id'],
+                            'series_id' => $series_map[$entry['series_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_series)) {
+                    $dbBatchInserter->insertOrUpdate('product_series', $final_product_series, [], ['product_id', 'series_id']);
+                }
 
-                // $final_product_actors = [];
-                // foreach ($product_actors_buffer as $entry) {
-                //     if (isset($actor_map[$entry['actor_duga_id']])) {
-                //         $final_product_actors[] = [
-                //             'product_id' => $entry['product_id'],
-                //             'actor_id' => $actor_map[$entry['actor_duga_id']]
-                //         ];
-                //     }
-                // }
-                // if (!empty($final_product_actors)) {
-                //     $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
-                // }
-                // --- ここから上の行は、このフェーズではコメントアウトまたは削除します ---
+                $final_product_actors = [];
+                foreach ($product_actors_buffer as $entry) {
+                    if (isset($actor_map[$entry['actor_duga_id']])) {
+                        $final_product_actors[] = [
+                            'product_id' => $entry['product_id'],
+                            'actor_id' => $actor_map[$entry['actor_duga_id']]
+                        ];
+                    }
+                }
+                if (!empty($final_product_actors)) {
+                    $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
+                }
 
-
-                $pdo->commit(); // トランザクションコミット
-                $logger->log("バッチ処理が正常にコミットされました。");
-
-                // raw_api_data のバッファをクリア
-                $raw_data_buffer = [];
-
-                // 他のバッファもクリアしておくことで、メモリリークや誤動作を防ぎます
-                $products_buffer_temp = [];
-                $categories_buffer = [];
-                $genres_buffer = [];
-                $labels_buffer = [];
-                $directors_buffer = [];
-                $series_buffer = [];
-                $actors_buffer = [];
-                $product_categories_buffer = [];
-                $product_genres_buffer = [];
-                $product_labels_buffer = [];
-                $product_directors_buffer = [];
-                $product_series_buffer = [];
-                $product_actors_buffer = [];
-
+                // すべて成功したらコミット
+                $pdo->commit();
+                $logger->log("現在のバッチのデータベーストランザクションをコミットしました。");
+                
             } catch (PDOException $e) {
+                // エラーが発生したらロールバック
                 $pdo->rollBack();
                 $logger->error("データベース処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
-                // 生データ取得に致命的なエラーの場合は続行しても意味がないため、再スロー
+                // 例外を再スローして、外側のtry-catchブロックでキャッチさせる
                 throw $e; 
             }
+
+            // バッファをクリア
+            $raw_data_buffer = [];
+            $products_buffer_temp = [];
+            $categories_buffer = [];
+            $genres_buffer = [];
+            $labels_buffer = [];
+            $directors_buffer = [];
+            $series_buffer = [];
+            $actors_buffer = [];
+            $product_categories_buffer = [];
+            $product_genres_buffer = [];
+            $product_labels_buffer = [];
+            $product_directors_buffer = [];
+            $product_series_buffer = [];
+            $product_actors_buffer = [];
         }
+
         $total_processed_records += count($api_data_batch);
         $current_offset++; // 次のオフセットへ
-    } // while ループ終了
-    
-    // ループ終了後、残っているバッファをフラッシュ (raw_api_data のみ)
+        
+        // API呼び出しの間隔を調整する (オプション)
+        // usleep(500000); // 500ミリ秒待機 (API制限を考慮)
+
+    } // while ($total_processed_records < $total_api_results) 終了
+
+    // ループ終了後、残りのバッファがあれば処理
     if (!empty($raw_data_buffer)) {
-        $logger->log("スクリプト終了前に残りのバッファ (" . count($raw_data_buffer) . "件) を処理します。");
+        $logger->log("残りのバッファデータを処理中...");
         $pdo->beginTransaction();
         try {
+            // raw_api_data テーブルへのUPSERT
             $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
             $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
-            $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
+
+            // products_buffer_temp に raw_api_data_id を紐付け、products テーブルへのUPSERTを準備
+            $final_products_for_upsert = [];
+            foreach ($products_buffer_temp as $api_id => $product_data) {
+                $raw_api_data_id = $dbBatchInserter->getRawApiDataId(API_SOURCE_NAME, $api_id);
+                if ($raw_api_data_id !== null) {
+                    $product_data['raw_api_data_id'] = $raw_api_data_id;
+                    $final_products_for_upsert[] = $product_data;
+                } else {
+                    $logger->error("警告: api_product_id '{$api_id}' の raw_api_data_id が見つかりませんでした。products テーブルにUPSERTされません。");
+                }
+            }
+
+            // products テーブルへのUPSERT
+            $products_upsert_columns = [
+                'title', 'original_title', 'caption', 'release_date', 'maker_name', 'itemno', 'price', 'volume',
+                'url', 'affiliate_url', 'image_url_small', 'image_url_medium', 'image_url_large',
+                'jacket_url_small', 'jacket_url_medium', 'jacket_url_large',
+                'sample_movie_url', 'sample_movie_capture_url', 'source_api', 'raw_api_data_id', 'updated_at'
+            ];
+            if (!empty($final_products_for_upsert)) {
+                $dbBatchInserter->insertOrUpdate('products', $final_products_for_upsert, $products_upsert_columns);
+                $logger->log(count($final_products_for_upsert) . "件の残りの商品データを 'products' にUPSERTしました。");
+            } else {
+                $logger->log("残りのproducts テーブルにUPSERTするデータがありませんでした。");
+            }
+
+            // 分類テーブルの処理
+            $category_map = []; 
+            foreach ($categories_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'categories', $data);
+                if ($db_id !== null) {
+                    $category_map[$duga_id] = $db_id;
+                }
+            }
+            
+            $genre_map = []; 
+            foreach ($genres_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'genres', $data);
+                if ($db_id !== null) {
+                    $genre_map[$duga_id] = $db_id;
+                }
+            }
+
+            $label_map = [];
+            foreach ($labels_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'labels', $data);
+                if ($db_id !== null) {
+                    $label_map[$duga_id] = $db_id;
+                }
+            }
+
+            $director_map = [];
+            foreach ($directors_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'directors', $data);
+                if ($db_id !== null) {
+                    $director_map[$duga_id] = $db_id;
+                }
+            }
+
+            $series_map = [];
+            foreach ($series_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'series', $data);
+                if ($db_id !== null) {
+                    $series_map[$duga_id] = $db_id;
+                }
+            }
+
+            $actor_map = [];
+            foreach ($actors_buffer as $duga_id => $data) {
+                $db_id = processClassificationData($dbBatchInserter, $logger, 'actors', $data);
+                if ($db_id !== null) {
+                    $actor_map[$duga_id] = $db_id;
+                }
+            }
+
+            // 中間テーブルへのUPSERT
+            $final_product_categories = [];
+            foreach ($product_categories_buffer as $entry) {
+                if (isset($category_map[$entry['category_duga_id']])) {
+                    $final_product_categories[] = [
+                        'product_id' => $entry['product_id'],
+                        'category_id' => $category_map[$entry['category_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_categories)) {
+                $dbBatchInserter->insertOrUpdate('product_categories', $final_product_categories, [], ['product_id', 'category_id']);
+            }
+
+            $final_product_genres = [];
+            foreach ($product_genres_buffer as $entry) {
+                if (isset($genre_map[$entry['genre_duga_id']])) {
+                    $final_product_genres[] = [
+                        'product_id' => $entry['product_id'],
+                        'genre_id' => $genre_map[$entry['genre_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_genres)) {
+                $dbBatchInserter->insertOrUpdate('product_genres', $final_product_genres, [], ['product_id', 'genre_id']);
+            }
+            
+            $final_product_labels = [];
+            foreach ($product_labels_buffer as $entry) {
+                if (isset($label_map[$entry['label_duga_id']])) {
+                    $final_product_labels[] = [
+                        'product_id' => $entry['product_id'],
+                        'label_id' => $label_map[$entry['label_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_labels)) {
+                $dbBatchInserter->insertOrUpdate('product_labels', $final_product_labels, [], ['product_id', 'label_id']);
+            }
+
+            $final_product_directors = [];
+            foreach ($product_directors_buffer as $entry) {
+                if (isset($director_map[$entry['director_duga_id']])) {
+                    $final_product_directors[] = [
+                        'product_id' => $entry['product_id'],
+                        'director_id' => $director_map[$entry['director_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_directors)) {
+                $dbBatchInserter->insertOrUpdate('product_directors', $final_product_directors, [], ['product_id', 'director_id']);
+            }
+
+            $final_product_series = [];
+            foreach ($product_series_buffer as $entry) {
+                if (isset($series_map[$entry['series_duga_id']])) {
+                    $final_product_series[] = [
+                        'product_id' => $entry['product_id'],
+                        'series_id' => $series_map[$entry['series_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_series)) {
+                $dbBatchInserter->insertOrUpdate('product_series', $final_product_series, [], ['product_id', 'series_id']);
+            }
+
+            $final_product_actors = [];
+            foreach ($product_actors_buffer as $entry) {
+                if (isset($actor_map[$entry['actor_duga_id']])) {
+                    $final_product_actors[] = [
+                        'product_id' => $entry['product_id'],
+                        'actor_id' => $actor_map[$entry['actor_duga_id']]
+                    ];
+                }
+            }
+            if (!empty($final_product_actors)) {
+                $dbBatchInserter->insertOrUpdate('product_actors', $final_product_actors, [], ['product_id', 'actor_id']);
+            }
             $pdo->commit();
-            $logger->log("残りのバッチ処理が正常にコミットされました。");
+            $logger->log("残りのバッファデータのデータベーストランザクションをコミットしました。");
+
         } catch (PDOException $e) {
             $pdo->rollBack();
-            $logger->error("スクリプト終了時のデータベース処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+            $logger->error("残りのバッファデータ処理中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
         }
     }
 
-    $logger->log("Duga APIからの全生データの取得と保存が完了しました。");
+    $logger->log("Duga APIからのデータ取得とデータベース保存処理が完了しました。総処理レコード数: {$total_processed_records}件");
+    echo "Duga APIからのデータ取得とデータベース保存処理が完了しました。\n";
 
 } catch (Exception $e) {
+    // API呼び出しまたはデータ処理中の一般的なエラー
     $logger->error("主要処理ループ中に致命的なエラーが発生しました: " . $e->getMessage());
-    error_log("致命的なエラー: " . $e->getMessage());
+    echo "エラー: 主要処理中に問題が発生しました。詳細はログを確認してください。\n";
 } finally {
-    if ($database) {
-        $database->closeConnection();
-    }
+    // PDO接続を閉じる (PDOはスクリプト終了時に自動的に閉じられるが、明示的に閉じることも可能)
+    // $database->closeConnection(); // DatabaseクラスにcloseConnectionメソッドがある場合
     $logger->log("スクリプト実行終了。");
+    echo "--- スクリプト実行終了 ---\n";
 }
