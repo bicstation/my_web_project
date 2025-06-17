@@ -30,7 +30,7 @@ class DugaApiClient
      * @param int $offset 取得開始オフセット (Duga APIは1から始まる)
      * @param int $hits 一度に取得するアイテム数
      * @param array $additionalParams APIリクエストに追加する追加パラメータ
-     * @return array 取得したアイテムの配列と総件数。例: ['items' => [...], 'total_hits' => 123]
+     * @return array 取得したアイテムの配列と総件数。例: ['items' => [...], 'count' => 123]
      * @throws Exception API呼び出しに失敗した場合
      */
     public function getItems(int $offset, int $hits, array $additionalParams = []): array
@@ -38,7 +38,6 @@ class DugaApiClient
         // APIキーが設定されているか確認
         if (empty($this->apiKey) || $this->apiKey === 'YOUR_DUGA_API_KEY_HERE') {
             $this->logger->error("Duga API Key is not set or is invalid. Please check your .env file.");
-            // APIキーがない場合は例外をスローして処理を中断させるのがより堅牢
             throw new Exception("Duga API Key is not set or is invalid.");
         }
 
@@ -81,20 +80,14 @@ class DugaApiClient
             throw new Exception("JSON decode error from Duga API: " . json_last_error_msg());
         }
         
-        // Duga APIのレスポンス構造の確認とデータ抽出
-        // 'result' キーが存在し、その中に 'items' と 'total_hits' があることを期待
-        if (!isset($data['result']) || !is_array($data['result'])) {
-            $this->logger->error("Duga APIレスポンスに 'result' キーが見つからないか、配列ではありません: " . json_encode($data));
-            return ['items' => [], 'total_hits' => 0]; // 予期せぬ構造の場合は空のデータを返す
-        }
+        // --- ここからDuga APIのレスポンス構造に合わせた修正 ---
+        // Duga APIのレスポンスはルートに'items'と'count'を持つことを期待
+        $items = $data['items'] ?? []; // 'items' キーが存在しない場合は空の配列
+        $count = $data['count'] ?? 0;   // 'count' キーが存在しない場合は0
 
-        $result_data = $data['result'];
-        $items = $result_data['items'] ?? []; // 'result' の中の 'items' を取得
-        $totalHits = $result_data['total_hits'] ?? 0; // 'result' の中の 'total_hits' を取得
+        $this->logger->log("Duga APIから取得したアイテム数: " . count($items) . ", 総件数: " . $count);
 
-        $this->logger->log("Duga APIから取得したアイテム数: " . count($items) . ", 総ヒット数: " . $totalHits);
-
-        // アイテムの配列と総ヒット数を返す
-        return ['items' => $items, 'total_hits' => $totalHits];
+        // アイテムの配列と総件数を返す (total_hits を count に変更)
+        return ['items' => $items, 'count' => $count];
     }
 }
