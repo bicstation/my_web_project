@@ -86,10 +86,12 @@ def insert_raw_api_data(conn, data_json, api_name):
     else:
         # なければ新規挿入
         insert_query = """
-            INSERT INTO raw_api_data (row_json_data, source_name, fetched_at, updated_at)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO raw_api_data (row_json_data, source_name, api_product_id, fetched_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(insert_query, (data_json_str, api_name, now, now))
+        # 仮のapi_product_idをダミーデータとして設定
+        dummy_api_product_id = f"dummy_{api_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}" 
+        cursor.execute(insert_query, (data_json_str, api_name, dummy_api_product_id, now, now))
         raw_data_id = cursor.lastrowid
         print(f"新しいraw_api_dataを挿入しました (ID: {raw_data_id})。")
 
