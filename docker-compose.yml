@@ -75,7 +75,6 @@ services:
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # init.sql を直接マウント
     ports:
       - "3306:3306"
     networks:
