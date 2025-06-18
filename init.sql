@@ -81,21 +81,21 @@ CREATE TABLE `products` (
     `product_id` VARCHAR(255) NOT NULL UNIQUE, -- Duga APIの productid
     `title` VARCHAR(255) NOT NULL,
     `original_title` VARCHAR(255), -- 原題
-    `caption` TEXT,             -- 作品の説明・概要 (TEXT型)
+    `caption` TEXT, -- 作品の説明・概要 (TEXT型)
     `release_date` DATE,
     `maker_name` VARCHAR(255),
-    `item_no` VARCHAR(255),      -- メーカー品番 (populate_db.pyのエラーに対応: 'itemno' -> 'item_no')
-    `price` DECIMAL(10, 2),     -- 価格（小数点以下2桁まで、最大10桁）
-    `volume` INT,               -- 再生時間（分）
-    `url` TEXT,                 -- DUGA内の商品ページURL (TEXT型に変更)
-    `affiliate_url` TEXT,       -- アフィリエイトURL (TEXT型に変更)
-    `image_url_small` TEXT,     -- メイン画像（small）(TEXT型に変更)
-    `image_url_medium` TEXT,    -- メイン画像（medium）(TEXT型に変更)
-    `image_url_large` TEXT,     -- メイン画像（large）(TEXT型に変更)
-    `jacket_url_small` TEXT,    -- ジャケット画像（small）(TEXT型に変更)
-    `jacket_url_medium` TEXT,   -- ジャケット画像（medium）(TEXT型に変更)
-    `jacket_url_large` TEXT,    -- ジャケット画像（large）(TEXT型に変更)
-    `sample_movie_url` TEXT,    -- サンプル動画のURL (TEXT型に変更)
+    `item_no` VARCHAR(255), -- メーカー品番 (populate_db.pyのエラーに対応: 'itemno' -> 'item_no')
+    `price` DECIMAL(10, 2), -- 価格（小数点以下2桁まで、最大10桁）
+    `volume` INT,  -- 再生時間（分）
+    `url` TEXT,  -- DUGA内の商品ページURL (TEXT型に変更)
+    `affiliate_url` TEXT,  -- アフィリエイトURL (TEXT型に変更)
+    `image_url_small` TEXT,  -- メイン画像（small）(TEXT型に変更)
+    `image_url_medium` TEXT, -- メイン画像（medium）(TEXT型に変更)
+    `image_url_large` TEXT,  -- メイン画像（large）(TEXT型に変更)
+    `jacket_url_small` TEXT, -- ジャケット画像（small）(TEXT型に変更)
+    `jacket_url_medium` TEXT,  -- ジャケット画像（medium）(TEXT型に変更)
+    `jacket_url_large` TEXT, -- ジャケット画像（large）(TEXT型に変更)
+    `sample_movie_url` TEXT, -- サンプル動画のURL (TEXT型に変更)
     `sample_movie_capture_url` TEXT, -- サンプル動画のキャプチャ画像URL (TEXT型に変更)
     `source_api` VARCHAR(50) NOT NULL, -- データの取得元API
     `raw_api_data_id` INT, -- raw_api_dataテーブルへの外部キー
