@@ -42,7 +42,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST}
       DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_PASSWORD: ${DB_PASS}
       DB_NAME: ${DB_NAME}
       # DB_PASS: ${DB_PASSWORD} # ★確認: アプリケーションコードでどちらを参照しているか確認し、不要なら削除
       DUGA_API_KEY: ${DUGA_API_KEY}
