@@ -74,6 +74,20 @@ CREATE TABLE `raw_api_data` (
     UNIQUE KEY `idx_source_api_product_id` (`source_name`, `api_product_id`) -- UNIQUE KEYを追加 (以前のエラー対策)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `raw_api_data` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '主キー',
+    `product_id` VARCHAR(255) NOT NULL COMMENT 'APIから取得したプロダクトID。重複を許可。',
+    `api_response_data` JSON NOT NULL COMMENT 'APIからの生レスポンスデータ全体をJSON形式で保存',
+    `source_api` VARCHAR(50) NOT NULL COMMENT 'データの取得元API (例: "duga", "mgs")。PHPスクリプトのAPI_SOURCE_NAMEに対応。',
+    `fetched_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'データ取得日時',
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'レコードが最後に更新された日時',
+    INDEX `idx_product_id_source_api` (`product_id`, `source_api`) COMMENT 'product_idとsource_apiの組み合わせでの検索効率を上げるためのインデックス'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='APIから取得した生データを格納するテーブル';
+
+
+
+
+
 -- 4. products テーブルの作成 (整形された商品データ保存用)
 -- product_id に UNIQUE 制約を付けて、概念的な商品を一意に識別できるようにします。
 CREATE TABLE `products` (

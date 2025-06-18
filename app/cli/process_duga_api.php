@@ -18,7 +18,6 @@ $dotenv->load();
 use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
-// use App\Util\DbBatchInsert; // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
@@ -59,7 +58,6 @@ $dbConfig = [
 $logger = null;
 $database = null;
 $dugaApiClient = null;
-// $dbBatchInserter = null; // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 // ロックファイルのパス (一時ファイルとして設定)
 // Docker環境の場合、コンテナ内で共通してアクセスできるパスが望ましい
@@ -90,8 +88,6 @@ try {
     $pdo = $database->getConnection(); // PDOインスタンスを取得
 
     $dugaApiClient = new DugaApiClient($dugaApiUrl, $dugaApiKey, $logger);
-
-    // $dbBatchInserter = new DbBatchInsert($database, $logger); // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 } catch (Exception $e) {
     error_log("CLI初期設定エラー: " . $e->getMessage());
@@ -178,13 +174,13 @@ try {
         // 取得したレコード数に基づいて、連続空レスポンスカウンターを更新
         if (empty($api_data_batch)) {
             $consecutive_empty_responses++;
-            $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
+            $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
             
             // 連続空レスポンス数が閾値に達した場合、または総件数を超過しそうな場合は終了
             // もしAPIがこれ以上データを持っていないと判断できる場合は、ここで終了
             if ($consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSES || $total_processed_records >= $total_api_results) {
-                 $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数に達した/超過したため、処理を終了します。");
-                 break; // ループを抜ける
+                $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数に達した/超過したため、処理を終了します。");
+                break; // ループを抜ける
             }
             // 空のレスポンスでもオフセットは進めるべき。同じオフセットで無限にリトライするのを防ぐ。
             $current_offset++; 
@@ -210,13 +206,13 @@ try {
                 continue; // productid がないレコードはスキップ
             }
 
-            // raw_api_data テーブル用のデータ準備
+            // raw_api_data テーブル用のデータ準備 (カラム名をSQLスキーマに合わせる)
             $raw_data_entry = [
-                'source_name'    => API_SOURCE_NAME,
-                'api_product_id' => $content_id,
-                'row_json_data'  => json_encode($api_record),
-                'fetched_at'     => date('Y-m-d H:i:s'),
-                'updated_at'     => date('Y-m-d H:i:s')
+                'product_id'        => $content_id,           // SQL: product_id
+                'api_response_data' => json_encode($api_record), // SQL: api_response_data
+                'source_api'        => API_SOURCE_NAME,      // SQL: source_api
+                'fetched_at'        => date('Y-m-d H:i:s'),
+                'updated_at'        => date('Y-m-d H:i:s')   
             ];
             $raw_data_buffer[] = $raw_data_entry;
         } // foreach ($api_data_batch as $api_record_wrapper) 終了
@@ -232,6 +228,10 @@ try {
                 $columns = array_keys($raw_data_buffer[0]); 
                 $columnNames = implode(', ', $columns);
                 $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+                // ON DUPLICATE KEY UPDATE を使用して、product_id と source_api が重複した場合に更新
+                // ただし、今回は「重複は認めます」とのことなので、単純なINSERT INTO で良い。
+                // 既存のレコードを更新したい場合は ON DUPLICATE KEY UPDATE を検討。
+                // ここでは `product_id` の重複は許容されているため、シンプルに INSERT を実行します。
                 $sql = "INSERT INTO raw_api_data ({$columnNames}) VALUES ({$placeholders})";
                 
                 $stmt = $pdo->prepare($sql);
@@ -319,4 +319,3 @@ try {
 }
 
 echo "--- スクリプト実行終了 ---\n";
-?>
