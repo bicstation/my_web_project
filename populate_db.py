@@ -107,7 +107,6 @@ def populate_products_from_raw_data():
 
         # productsテーブルにsource_apiカラムは既に存在するため、このALTER TABLEは不要です。
         # 古いMySQLバージョンで 'IF NOT EXISTS' がサポートされていないため削除しました。
-        # print("productsテーブルにsource_apiカラムを追加しました（もし存在しなければ）。") # この行も不要になります
 
         # raw_api_data から最新の 'item' データを取得 (source_name で取得)
         cursor.execute("SELECT id, row_json_data, source_name FROM raw_api_data WHERE source_name = 'item' ORDER BY updated_at DESC LIMIT 1")
@@ -141,7 +140,7 @@ def populate_products_from_raw_data():
             release_date = parse_date(get_safe_value(item_data, ['item', 'release_date']))
             maker_name = clean_string(get_safe_value(item_data, ['item', 'maker_name']))
             item_no = clean_string(get_safe_value(item_data, ['item', 'item_no']))
-            price = convert_to_int(get_safe_value(item_data, ['item', 'price']), default=0)
+            price = float(get_safe_value(item_data, ['item', 'price'], default=0.0)) # DECIMAL型に合わせるためfloatに
             volume = convert_to_int(get_safe_value(item_data, ['item', 'volume']), default=0)
             url = clean_string(get_safe_value(item_data, ['item', 'url']))
             affiliate_url = clean_string(get_safe_value(item_data, ['item', 'affiliate_url']))
@@ -236,84 +235,84 @@ if __name__ == "__main__":
     # raw_api_data にデータがない場合、まずここにダミーデータを挿入する処理を一時的に記述し、実行します。
     # 実際にはAPIからデータを取得し、raw_api_dataに挿入する処理をここで行います。
     # 以下は、raw_api_dataにデータがない場合にのみ実行する例です。
-    # conn_check = None
-    # try:
-    #     conn_check = mysql.connector.connect(**DB_CONFIG)
-    #     cursor_check = conn_check.cursor()
-    #     cursor_check.execute("SELECT COUNT(*) FROM raw_api_data WHERE source_name = 'item'")
-    #     if cursor_check.fetchone()[0] == 0:
-    #         print("raw_api_dataテーブルに'item'データがありません。ダミーデータを挿入します。")
-    #         dummy_api_data = {
-    #             "items": [
-    #                 {
-    #                     "item": {
-    #                         "content_id": "TEST001",
-    #                         "title": "テストタイトル1",
-    #                         "original_title": "Original Title 1",
-    #                         "caption": "これはテスト用のキャプションです1。",
-    #                         "release_date": "2023-01-01",
-    #                         "maker_name": "テストメーカーA",
-    #                         "item_no": "ABC-123",
-    #                         "price": 1000.00, # DECIMAL型に合わせる
-    #                         "volume": 1,
-    #                         "url": "http://example.com/test001",
-    #                         "affiliate_url": "http://affiliate.example.com/test001",
-    #                         "image_url": {
-    #                             "small": "http://example.com/img/s/test001.jpg",
-    #                             "medium": "http://example.com/img/m/test001.jpg",
-    #                             "large": "http://example.com/img/l/test001.jpg"
-    #                         },
-    #                         "jacket_url": {
-    #                             "small": "http://example.com/jacket/s/test001.jpg",
-    #                             "medium": "http://example.com/jacket/m/test001.jpg",
-    #                             "large": "http://example.com/jacket/l/test001.jpg"
-    #                         },
-    #                         "sample_movie_url": "http://example.com/mov/test001.mp4",
-    #                         "sample_movie_capture_url": "http://example.com/mov_cap/test001.jpg",
-    #                         "source_api": "test_api_source" # raw_api_data の source_name と対応
-    #                     }
-    #                 },
-    #                 {
-    #                     "item": {
-    #                         "content_id": "TEST002",
-    #                         "title": "テストタイトル2",
-    #                         "original_title": "Original Title 2",
-    #                         "caption": "これはテスト用のキャプションです2。",
-    #                         "release_date": "2023-02-01",
-    #                         "maker_name": "テストメーカーB",
-    #                         "item_no": "XYZ-456",
-    #                         "price": 2000.00, # DECIMAL型に合わせる
-    #                         "volume": 2,
-    #                         "url": "http://example.com/test002",
-    #                         "affiliate_url": "http://affiliate.example.com/test002",
-    #                         "image_url": {
-    #                             "small": "http://example.com/img/s/test002.jpg",
-    #                             "medium": "http://example.com/img/m/test002.jpg",
-    #                             "large": "http://example.com/img/l/test002.jpg"
-    #                         },
-    #                         "jacket_url": {
-    #                             "small": "http://example.com/jacket/s/test002.jpg",
-    #                             "medium": "http://example.com/jacket/m/test002.jpg",
-    #                             "large": "http://example.com/jacket/l/test002.jpg"
-    #                         },
-    #                         "sample_movie_url": "http://example.com/mov/test002.mp4",
-    #                         "sample_movie_capture_url": "http://example.com/mov_cap/test002.jpg",
-    #                         "source_api": "test_api_source"
-    #                     }
-    #                 }
-    #             ]
-    #         }
-    #         insert_raw_api_data(conn_check, dummy_api_data, 'item') # 'item' は source_name の値として使用
-    #         print("ダミーデータをraw_api_dataテーブルに挿入しました。")
-    #     else:
-    #         print("raw_api_dataテーブルに'item'データが既に存在します。")
-    # except Exception as e:
-    #     print(f"ダミーデータ挿入チェックまたは挿入エラー: {e}")
-    # finally:
-    #     if conn_check and conn_check.is_connected():
-    #         cursor_check.close()
-    #         conn_check.close()
-    #         print("MySQL接続を閉じました。(ダミーデータチェック)")
+    conn_check = None
+    try:
+        conn_check = mysql.connector.connect(**DB_CONFIG)
+        cursor_check = conn_check.cursor()
+        cursor_check.execute("SELECT COUNT(*) FROM raw_api_data WHERE source_name = 'item'")
+        if cursor_check.fetchone()[0] == 0:
+            print("raw_api_dataテーブルに'item'データがありません。ダミーデータを挿入します。")
+            dummy_api_data = {
+                "items": [
+                    {
+                        "item": {
+                            "content_id": "TEST001",
+                            "title": "テストタイトル1",
+                            "original_title": "Original Title 1",
+                            "caption": "これはテスト用のキャプションです1。",
+                            "release_date": "2023-01-01",
+                            "maker_name": "テストメーカーA",
+                            "item_no": "ABC-123",
+                            "price": 1000.00, # DECIMAL型に合わせる
+                            "volume": 1,
+                            "url": "http://example.com/test001",
+                            "affiliate_url": "http://affiliate.example.com/test001",
+                            "image_url": {
+                                "small": "http://example.com/img/s/test001.jpg",
+                                "medium": "http://example.com/img/m/test001.jpg",
+                                "large": "http://example.com/img/l/test001.jpg"
+                            },
+                            "jacket_url": {
+                                "small": "http://example.com/jacket/s/test001.jpg",
+                                "medium": "http://example.com/jacket/m/test001.jpg",
+                                "large": "http://example.com/jacket/l/test001.jpg"
+                            },
+                            "sample_movie_url": "http://example.com/mov/test001.mp4",
+                            "sample_movie_capture_url": "http://example.com/mov_cap/test001.jpg",
+                            "source_api": "test_api_source" # raw_api_data の source_name と対応
+                        }
+                    },
+                    {
+                        "item": {
+                            "content_id": "TEST002",
+                            "title": "テストタイトル2",
+                            "original_title": "Original Title 2",
+                            "caption": "これはテスト用のキャプションです2。",
+                            "release_date": "2023-02-01",
+                            "maker_name": "テストメーカーB",
+                            "item_no": "XYZ-456",
+                            "price": 2000.00, # DECIMAL型に合わせる
+                            "volume": 2,
+                            "url": "http://example.com/test002",
+                            "affiliate_url": "http://affiliate.example.com/test002",
+                            "image_url": {
+                                "small": "http://example.com/img/s/test002.jpg",
+                                "medium": "http://example.com/img/m/test002.jpg",
+                                "large": "http://example.com/img/l/test002.jpg"
+                            },
+                            "jacket_url": {
+                                "small": "http://example.com/jacket/s/test002.jpg",
+                                "medium": "http://example.com/jacket/m/test002.jpg",
+                                "large": "http://example.com/jacket/l/test002.jpg"
+                            },
+                            "sample_movie_url": "http://example.com/mov/test002.mp4",
+                            "sample_movie_capture_url": "http://example.com/mov_cap/test002.jpg",
+                            "source_api": "test_api_source"
+                        }
+                    }
+                ]
+            }
+            insert_raw_api_data(conn_check, dummy_api_data, 'item')
+            print("ダミーデータをraw_api_dataテーブルに挿入しました。")
+        else:
+            print("raw_api_dataテーブルに'item'データが既に存在します。")
+    except Exception as e:
+        print(f"ダミーデータ挿入チェックまたは挿入エラー: {e}")
+    finally:
+        if conn_check and conn_check.is_connected():
+            cursor_check.close()
+            conn_check.close()
+            print("MySQL接続を閉じました。(ダミーデータチェック)")
 
     # products テーブルへのデータ投入を実行
     populate_products_from_raw_data()
