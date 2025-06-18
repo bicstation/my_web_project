@@ -48,7 +48,7 @@ $dbConfig = [
     'host'      => $_ENV['DB_HOST'] ?? 'localhost',
     'dbname'    => $_ENV['DB_NAME'] ?? 'web_project_db',
     'user'      => $_ENV['DB_USER'] ?? 'root',
-    'pass'      => $_ENV['DB_PASS'] ?? 'password',
+    'pass'      => $_ENV['DB_PASSWORD'] ?? 'password',
     'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
