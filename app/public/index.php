@@ -53,9 +53,9 @@ $dbConfig = [
 ];
 
 
-echo "<pre>DB Config: ";
-print_r($dbConfig);
-echo "</pre>";
+// echo "<pre>DB Config: ";
+// print_r($dbConfig);
+// echo "</pre>";
 
 // ロガーとデータベース接続をグローバルで利用可能にする
 global $logger, $database, $pdo;
