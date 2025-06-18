@@ -8,13 +8,13 @@ services:
       - "80:80"
       - "443:443" # HTTPSポートも公開
     volumes:
-      # プロジェクトルート全体ではなく、publicディレクトリをWebルートとしてマウントすることを推奨します。
-      # アプリケーションの公開ディレクトリがどこにあるかによります。
+      # アプリケーションの公開ディレクトリをNginxのWebルートにマウント
+      # あなたのアプリケーションの公開ディレクトリがどこにあるかによります。
       # 例: アプリケーションのWeb公開ディレクトリが app/public の場合
       - ./app/public:/var/www/html # ★修正: アプリケーションの公開ディレクトリをNginxのWebルートにマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
       - /etc/letsencrypt:/etc/letsencrypt:ro # Certbot証明書を読み取り専用でマウント
-      - ./storage/logs:/var/log/nginx # ★追加: Nginxのログをホストのstorage/logsにマウント
+      - ./storage/nginx_logs:/var/log/nginx # ★推奨: Nginxのログをホストの専用ディレクトリにマウント
     depends_on:
       php:
         condition: service_healthy # PHPサービスが健全な状態になるまで待機
