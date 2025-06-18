@@ -18,7 +18,7 @@ $dotenv->load();
 use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
-use App\Util\DbBatchInsert;
+// use App\Util\DbBatchInsert; // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 // このスクリプトがCLI (コマンドラインインターフェース) から実行されたことを確認
 if (php_sapi_name() !== 'cli') {
@@ -48,7 +48,7 @@ $dbConfig = [
     'host'      => $_ENV['DB_HOST'] ?? 'localhost',
     'dbname'    => $_ENV['DB_NAME'] ?? 'tiper',
     'user'      => $_ENV['DB_USER'] ?? 'root',
-    'pass'      => $_ENV['DB_PASS'] ?? 'password',
+    'pass'      => $_ENV['DB_PASS'] ?? 'password', // または $_ENV['DB_PASSWORD']
     'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
@@ -59,7 +59,7 @@ $dbConfig = [
 $logger = null;
 $database = null;
 $dugaApiClient = null;
-$dbBatchInserter = null;
+// $dbBatchInserter = null; // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 // ロックファイルのパス (一時ファイルとして設定)
 // Docker環境の場合、コンテナ内で共通してアクセスできるパスが望ましい
@@ -91,7 +91,7 @@ try {
 
     $dugaApiClient = new DugaApiClient($dugaApiUrl, $dugaApiKey, $logger);
 
-    $dbBatchInserter = new DbBatchInsert($database, $logger);
+    // $dbBatchInserter = new DbBatchInsert($database, $logger); // <-- DbBatchInsert はもう使わないのでコメントアウトまたは削除
 
 } catch (Exception $e) {
     error_log("CLI初期設定エラー: " . $e->getMessage());
@@ -178,7 +178,7 @@ try {
         // 取得したレコード数に基づいて、連続空レスポンスカウンターを更新
         if (empty($api_data_batch)) {
             $consecutive_empty_responses++;
-            $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
+            $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
             
             // 連続空レスポンス数が閾値に達した場合、または総件数を超過しそうな場合は終了
             // もしAPIがこれ以上データを持っていないと判断できる場合は、ここで終了
@@ -221,24 +221,33 @@ try {
             $raw_data_buffer[] = $raw_data_entry;
         } // foreach ($api_data_batch as $api_record_wrapper) 終了
 
-        // バッファが指定したチャンクサイズに達したら、データベースへのUPSERTを実行
+        // バッファが指定したチャンクサイズに達したら、データベースへのINSERTを実行
         if (count($raw_data_buffer) >= DB_BUFFER_SIZE) {
-            $logger->log("raw_api_dataバッファが" . DB_BUFFER_SIZE . "件に達しました。データベースへのUPSERTを開始します。");
+            $logger->log("raw_api_dataバッファが" . DB_BUFFER_SIZE . "件に達しました。データベースへのINSERTを開始します。");
             
-            // トランザクション開始
             $pdo->beginTransaction();
             try {
-                // raw_api_data テーブルへのUPSERT
-                // 'api_product_id' と 'source_name' の組み合わせでユニークと仮定し、重複したら更新
-                $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
-                $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
-                $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
+                // SQL_INSERT文を構築
+                // カラムの順序は $raw_data_buffer の要素のキーの順序に依存します
+                $columns = array_keys($raw_data_buffer[0]); 
+                $columnNames = implode(', ', $columns);
+                $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+                $sql = "INSERT INTO raw_api_data ({$columnNames}) VALUES ({$placeholders})";
+                
+                $stmt = $pdo->prepare($sql);
+
+                foreach ($raw_data_buffer as $row) {
+                    $values = array_values($row);
+                    $stmt->execute($values);
+                }
+                
+                $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にINSERTしました。");
 
                 $pdo->commit();
                 $logger->log("トランザクションをコミットしました。");
             } catch (PDOException $e) {
                 $pdo->rollBack();
-                $logger->error("データベースへのバッチUPSERT中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+                $logger->error("データベースへのバッチINSERT中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
                 // このエラーが発生した場合、処理を継続できない可能性が高いため、スクリプトを終了
                 die("致命的なデータベースエラーが発生しました。スクリプトを終了します。\n");
             }
@@ -264,19 +273,30 @@ try {
         usleep(200000); // 200ミリ秒 (0.2秒) 程度の待機
     } // while (true) ループ終了
 
-    // ループ終了後、残っているバッファがあれば最後にUPSERT
+    // ループ終了後、残っているバッファがあれば最後にINSERT
     if (!empty($raw_data_buffer)) {
-        $logger->log("残りのraw_api_dataバッファ " . count($raw_data_buffer) . " 件をデータベースにUPSERTします。");
+        $logger->log("残りのraw_api_dataバッファ " . count($raw_data_buffer) . " 件をデータベースにINSERTします。");
         $pdo->beginTransaction();
         try {
-            $raw_data_upsert_columns = ['row_json_data', 'fetched_at', 'updated_at'];
-            $dbBatchInserter->insertOrUpdate('raw_api_data', $raw_data_buffer, $raw_data_upsert_columns);
-            $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にUPSERTしました。");
+            // SQL_INSERT文を構築 (上記と同じロジック)
+            $columns = array_keys($raw_data_buffer[0]);
+            $columnNames = implode(', ', $columns);
+            $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+            $sql = "INSERT INTO raw_api_data ({$columnNames}) VALUES ({$placeholders})";
+            
+            $stmt = $pdo->prepare($sql);
+
+            foreach ($raw_data_buffer as $row) {
+                $values = array_values($row);
+                $stmt->execute($values);
+            }
+
+            $logger->log(count($raw_data_buffer) . "件の生データを 'raw_api_data' にINSERTしました。");
             $pdo->commit();
             $logger->log("トランザクションをコミットしました。");
         } catch (PDOException $e) {
             $pdo->rollBack();
-            $logger->error("最終バッチのデータベースUPSERT中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
+            $logger->error("最終バッチのデータベースINSERT中にエラーが発生しました。トランザクションをロールバックしました: " . $e->getMessage());
             die("致命的なデータベースエラーが発生しました。スクリプトを終了します。\n");
         }
         $raw_data_buffer = [];

@@ -69,7 +69,7 @@ CREATE TABLE `raw_api_data` (
     `row_json_data` JSON,
     `fetched_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY `idx_source_api_product_id` (`source_name`, `api_product_id`)
+    -- UNIQUE KEY `idx_source_api_product_id` (`source_name`, `api_product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 4. products テーブルの作成 (整形された商品データ保存用)
