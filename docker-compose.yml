@@ -11,6 +11,8 @@ services:
       # アプリケーションの公開ディレクトリをNginxのWebルートにマウント
       # あなたのアプリケーションの公開ディレクトリがどこにあるかによります。
       # 例: アプリケーションのWeb公開ディレクトリが app/public の場合
+      # LaravelやSymfonyなどフレームワークを使用している場合は ./app/public が一般的
+      # そうでなく、PHPコードがプロジェクトルート直下にある場合は ./app を削除
       - ./app/public:/var/www/html # ★修正: アプリケーションの公開ディレクトリをNginxのWebルートにマウント
       - ./nginx/conf.d:/etc/nginx/conf.d
       - /etc/letsencrypt:/etc/letsencrypt:ro # Certbot証明書を読み取り専用でマウント
@@ -33,16 +35,18 @@ services:
       # アプリケーションコードのルートをコンテナの /var/www/html にマウント
       # あなたのアプリケーションコードがプロジェクトルート直下にある場合は .:/var/www/html のままでも動作しますが、
       # appディレクトリにメインコードがあるなら ./app:/var/www/html がより適切です。
-      - .:/var/www/html # ★そのまま。もしappディレクトリにコードがあるなら ./app:/var/www/html に変更検討
+      # ★現在の設定(.):/var/www/html は、プロジェクトルート全体をPHPコンテナにマウントします。
+      # これはPHPアプリケーションのコードがプロジェクトルート直下にある場合に適切です。
+      - .:/var/www/html 
       # ホストのユーザーIDとグループIDでPHPプロセスを実行
-      - ./storage/logs:/var/www/html/storage/logs # ★修正: ホストのstorage/logsをコンテナにマウント
+      - ./storage/logs:/var/www/html/storage/logs # ★修正: ホストのstorage/logsをコンテナにマウント (アプリケーション内でログを生成する場合)
       - ./php.ini:/usr/local/etc/php/php.ini # php.iniファイルをコンテナにマウント
     # .env ファイルに CURRENT_UID と CURRENT_GID を設定してください
     user: "${CURRENT_UID}:${CURRENT_GID}"
     environment:
       DB_HOST: ${DB_HOST}
       DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASS}
+      DB_PASSWORD: ${DB_PASS} # DB_PASSとDB_PASSWORDのどちらがPHPアプリケーションで使われているか確認
       DB_NAME: ${DB_NAME}
       # DB_PASS: ${DB_PASSWORD} # ★確認: アプリケーションコードでどちらを参照しているか確認し、不要なら削除
       DUGA_API_KEY: ${DUGA_API_KEY}
@@ -71,6 +75,8 @@ services:
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
+      # app/database/init.sql のような初期SQLスクリプトがある場合
+      # また、このパスに raw_api_data の初期投入SQLも配置できます
       - ./app/database:/docker-entrypoint-initdb.d # MySQL起動時にSQLスクリプトを実行する標準パス
     ports:
       - "3306:3306"
@@ -86,7 +92,7 @@ services:
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:
-      PMA_HOST: mysql
+      PMA_HOST: mysql # MySQLサービスのコンテナ名（Docker Composeのサービス名）
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       TZ: Asia/Tokyo
     ports:
@@ -101,17 +107,46 @@ services:
     image: wordpress:latest
     container_name: wordpress_blog_container
     environment:
-      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_HOST: mysql:3306 # MySQLサービスのコンテナ名:ポート
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
       WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
       WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
       WORDPRESS_DEBUG: 1
       TZ: Asia/Tokyo
     volumes:
-      - ./wordpress_blog:/var/www/html
+      - ./wordpress_blog:/var/www/html # ホストのwordpress_blogディレクトリをマウント
     depends_on:
       mysql:
         condition: service_healthy # WordPressもMySQLの健全性を待機
+    networks:
+      - app-network
+
+  # ====================================================================
+  # 新規追加: DBデータ投入用 Pythonスクリプトコンテナ
+  # ====================================================================
+  db_populator:
+    build:
+      context: . # Dockerfileがある場所のコンテキスト (プロジェクトルート)
+      dockerfile: db_populator/Dockerfile # db_populatorディレクトリ内のDockerfileを指定
+    container_name: db_populator_container # 任意のコンテナ名
+    depends_on:
+      mysql:
+        condition: service_healthy # MySQLが健全な状態になるまで待機
+    environment:
+      # populate_db.py に渡すDB接続情報
+      DB_HOST: mysql # MySQLサービスのコンテナ名
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    # スクリプトを自動実行したい場合は command を指定
+    # command: python populate_db.py
+    # シェルに入って手動で実行したい場合は、ttyとstdin_openを設定
+    tty: true
+    stdin_open: true
+    # スクリプト自体はコンテナ内にコピーされるため、volumesは不要だが、
+    # 必要に応じてログや一時ファイルをホストに永続化するなら追加
+    # volumes:
+    #   - ./storage/populator_logs:/app/logs # 例: populatorのログ用
     networks:
       - app-network
 
@@ -120,4 +155,4 @@ networks:
     driver: bridge
 
 volumes:
-  mysql_data:
+  mysql_data: # MySQLのデータを永続化するボリューム
