@@ -75,9 +75,7 @@ services:
       TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
-      # app/database/init.sql のような初期SQLスクリプトがある場合
-      # また、このパスに raw_api_data の初期投入SQLも配置できます
-      - ./app/database:/docker-entrypoint-initdb.d # MySQL起動時にSQLスクリプトを実行する標準パス
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # init.sql を直接マウント
     ports:
       - "3306:3306"
     networks:
