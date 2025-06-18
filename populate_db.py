@@ -77,7 +77,7 @@ def insert_raw_api_data(conn, data_json, api_name):
         raw_data_id = result[0]
         update_query = """
             UPDATE raw_api_data
-            SET raw_json_data = %s, updated_at = %s
+            SET row_json_data = %s, updated_at = %s  # ★修正: raw_json_data -> row_json_data
             WHERE id = %s
         """
         cursor.execute(update_query, (data_json_str, now, raw_data_id))
@@ -85,7 +85,7 @@ def insert_raw_api_data(conn, data_json, api_name):
     else:
         # なければ新規挿入
         insert_query = """
-            INSERT INTO raw_api_data (raw_json_data, source_api, fetched_at, updated_at)
+            INSERT INTO raw_api_data (row_json_data, source_api, fetched_at, updated_at) # ★修正: raw_json_data -> row_json_data
             VALUES (%s, %s, %s, %s)
         """
         cursor.execute(insert_query, (data_json_str, api_name, now, now))
@@ -115,14 +115,14 @@ def populate_products_from_raw_data():
                 raise err # その他のエラーは再スロー
 
         # raw_api_data から最新の 'item' データを取得
-        cursor.execute("SELECT raw_json_data FROM raw_api_data WHERE source_api = 'item' ORDER BY updated_at DESC LIMIT 1")
+        cursor.execute("SELECT row_json_data FROM raw_api_data WHERE source_api = 'item' ORDER BY updated_at DESC LIMIT 1") # ★修正: raw_json_data -> row_json_data
         raw_data_row = cursor.fetchone()
 
         if not raw_data_row:
             print("raw_api_data (source_api='item') が見つかりません。")
             return
 
-        raw_json_data = json.loads(raw_data_row[0])
+        raw_json_data = json.loads(raw_data_row[0]) # この変数名は raw_json_data のままでOK
         # APIレスポンス構造の仮定: トップレベルに 'items' リストがある
         items = get_safe_value(raw_json_data, ['items'], [])
 
@@ -169,7 +169,7 @@ def populate_products_from_raw_data():
                 cursor.execute(insert_query, (product_id, title, release_date, maker_name, genre, source_api, now, now))
                 print(f"新しい製品を挿入しました: ID={product_id}, Title='{title}'")
             processed_count += 1
-
+        
         conn.commit()
         print(f"products テーブルへのデータ投入が完了しました。{processed_count} 件のアイテムを処理しました。")
 
