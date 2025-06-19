@@ -227,6 +227,16 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
             cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
         return 0
 
+    # ★修正点: タイトルが空の場合のスキップ処理を追加
+    if not title: # titleがNoneまたは空文字列の場合
+        print(f"警告: 製品タイトルが空のためスキップします。Product ID: {product_api_id} (Source: {source_api_name}).")
+        # 関連するraw_api_dataレコードも処理済みとしてマーク
+        for raw_data_row in all_raw_data_for_product:
+            update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
+            cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
+        return 0
+
+
     # データベースに製品が存在するか確認
     cursor.execute("SELECT id FROM products WHERE product_id = %s", (product_api_id,))
     existing_product = cursor.fetchone()
