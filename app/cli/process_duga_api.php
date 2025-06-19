@@ -196,29 +196,25 @@ try {
 
         // 取得したAPIデータをraw_api_dataのバッファに準備
         foreach ($api_data_batch as $api_record_wrapper) {
-            // ★修正点: 'item' キーのネストを削除し、直接 $api_record_wrapper を商品データとして使用★
-            // Duga APIの'items'配列の各要素が直接商品データであると仮定
-            $api_record = $api_record_wrapper; 
+            // ★再修正点: 'item' キーのネストを再度取り出す。Duga APIのitems配列の各要素は、さらに'item'キーでラップされている模様。★
+            $api_record = $api_record_wrapper['item'] ?? null;
 
-            // 元々あった $api_record が empty の場合のチェックは、
-            // $api_record = $api_record_wrapper; としたため不要になる。
-            // もし $api_record_wrapper 自体が空の連想配列である場合は、
-            // productid のチェックでスキップされるため問題ない。
-            // if (empty($api_record)) {
-            //     $logger->error("警告: レコードが空のためスキップします: " . json_encode($api_record_wrapper));
-            //     continue;
-            // }
+            if (empty($api_record)) {
+                $logger->error("警告: 'item' キーが見つからないか空のためレコードをスキップします: " . json_encode($api_record_wrapper));
+                continue;
+            }
 
             $content_id = $api_record['productid'] ?? null;
             
             if (empty($content_id)) {
+                // この警告は、'item'キー自体は存在するが、その中に 'productid' が見つからないか空の場合に出る
                 $logger->error("警告: productid が空のためレコードをスキップします: " . json_encode($api_record));
                 continue; // productid がないレコードはスキップ
             }
 
             // raw_api_data テーブル用のデータ準備 (カラム名をSQLスキーマに合わせる)
             $raw_data_entry = [
-                'product_id'        => $content_id,         // SQL: product_id
+                'product_id'        => $content_id,           // SQL: product_id
                 'api_response_data' => json_encode($api_record), // SQL: api_response_data ($api_record は正しい商品データ)
                 'source_api'        => API_SOURCE_NAME,      // SQL: source_api
                 'fetched_at'        => date('Y-m-d H:i:s'),
