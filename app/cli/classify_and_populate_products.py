@@ -61,7 +61,6 @@ def clean_string(value):
     s = str(value).strip()
     return s if s else None
 
-# ★★★ 追加: 価格文字列をfloatに安全に変換する関数 ★★★
 def convert_to_float(value, default=0.0):
     """
     文字列から「円」「~」「,」を除去し、floatに変換する。
@@ -76,7 +75,6 @@ def convert_to_float(value, default=0.0):
         return float(s)
     except (ValueError, TypeError):
         return default
-# ★★★ 追加終わり ★★★
 
 # ==============================================================================
 # データベース操作関数
@@ -95,7 +93,8 @@ def get_or_create_category(cursor, conn, category_type: str, category_name: str)
     else:
         insert_sql = "INSERT INTO categories (type, name) VALUES (%s, %s)"
         cursor.execute(insert_sql, (category_type, category_name))
-        conn.commit() # カテゴリの挿入は即座にコミット（カテゴリの衝突を減らすため）
+        # カテゴリの挿入はメインのトランザクションでまとめてコミットされるため、ここでは個別のcommitは不要
+        # conn.commit() # ★削除済み★
         return cursor.lastrowid
 
 def associate_product_with_category(cursor, conn, product_db_id: int, category_id: int):
@@ -216,9 +215,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
     release_date = parse_date(get_safe_value(main_item_data, ['release_date']))
     maker_name = clean_string(get_safe_value(main_item_data, ['maker_name']))
     item_no = clean_string(get_safe_value(main_item_data, ['item_no']))
-    # ★★★ 修正点: 価格の変換に新しいヘルパー関数を使用 ★★★
     price = convert_to_float(get_safe_value(main_item_data, ['price']), default=0.0)
-    # ★★★ 修正終わり ★★★
     volume = convert_to_int(get_safe_value(main_item_data, ['volume']), default=0)
     url = clean_string(get_safe_value(main_item_data, ['url']))
     affiliate_url = clean_string(get_safe_value(main_item_data, ['affiliate_url']))
@@ -361,6 +358,10 @@ def main_classification_process():
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
 
+        # ★★★ 修正済み: autocommit を False に設定し、明示的なトランザクション開始を削除 ★★★
+        conn.autocommit = False 
+        # ★★★ 修正済み ★★★
+
         # raw_api_dataテーブルにprocessed_atカラムが存在することを確認し、なければ追加する
         ensure_processed_at_column_exists(cursor, conn)
         
@@ -383,7 +384,9 @@ def main_classification_process():
         # 各ユニークな製品IDについて処理を実行
         for product_api_id, source_api_name in unique_product_ids_to_process:
             try:
-                conn.start_transaction() # 各製品IDの処理前にトランザクション開始
+                # ★★★ 修正済み: conn.start_transaction() の呼び出しを削除 ★★★
+                # conn.start_transaction() 
+                # ★★★ 修正済み ★★★
                 processed_count_for_this_product = process_product_batch_from_raw_data(cursor, conn, product_api_id, source_api_name)
                 total_products_processed += processed_count_for_this_product
                 conn.commit() # 各製品IDの処理後にコミット
@@ -406,12 +409,12 @@ def main_classification_process():
         print(f"JSONデコードエラー: {err}")
         if conn and conn.is_connected():
             conn.rollback()
-            print("メインループ中にトランザクションをロールバックしました。")
+            print("トランザクションをロールバックしました。")
     except Exception as e:
         print(f"予期せぬエラーが発生しました: {e}")
         if conn and conn.is_connected():
             conn.rollback()
-            print("メインループ中にトランザクションをロールバックしました。")
+            print("トランザクションをロールバックしました。")
     finally:
         if conn and conn.is_connected():
             cursor.close()
