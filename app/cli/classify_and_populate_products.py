@@ -61,6 +61,23 @@ def clean_string(value):
     s = str(value).strip()
     return s if s else None
 
+# ★★★ 追加: 価格文字列をfloatに安全に変換する関数 ★★★
+def convert_to_float(value, default=0.0):
+    """
+    文字列から「円」「~」「,」を除去し、floatに変換する。
+    変換できない場合はデフォルト値を返す。
+    """
+    if value is None:
+        return default
+    s = str(value).strip()
+    # 日本円記号、波線、カンマを除去
+    s = s.replace('円', '').replace('～', '').replace(',', '')
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+# ★★★ 追加終わり ★★★
+
 # ==============================================================================
 # データベース操作関数
 # ==============================================================================
@@ -134,10 +151,8 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
     main_raw_api_data_id = main_raw_data_row[0]
     main_raw_json_data = json.loads(main_raw_data_row[1])
     
-    # ★★★ 修正点: main_item_data の割り当てを修正 ★★★
     # main_raw_json_data 自体が既に 'item' の中身なので、直接使用
     main_item_data = main_raw_json_data 
-    # ★★★ 修正終わり ★★★
 
     # 全てのraw_api_dataレコードからカテゴリ情報を収集
     collected_genres = set()
@@ -150,10 +165,8 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
 
     for raw_data_row in all_raw_data_for_product:
         current_raw_json_data = json.loads(raw_data_row[1])
-        # ★★★ 修正点: current_item_data の割り当てを修正 ★★★
         # current_raw_json_data 自体が既に 'item' の中身なので、直接使用
         current_item_data = current_raw_json_data 
-        # ★★★ 修正終わり ★★★
 
         # ジャンル収集
         genres = get_safe_value(current_item_data, ['genres'], [])
@@ -203,7 +216,9 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
     release_date = parse_date(get_safe_value(main_item_data, ['release_date']))
     maker_name = clean_string(get_safe_value(main_item_data, ['maker_name']))
     item_no = clean_string(get_safe_value(main_item_data, ['item_no']))
-    price = float(get_safe_value(main_item_data, ['price'], default=0.0))
+    # ★★★ 修正点: 価格の変換に新しいヘルパー関数を使用 ★★★
+    price = convert_to_float(get_safe_value(main_item_data, ['price']), default=0.0)
+    # ★★★ 修正終わり ★★★
     volume = convert_to_int(get_safe_value(main_item_data, ['volume']), default=0)
     url = clean_string(get_safe_value(main_item_data, ['url']))
     affiliate_url = clean_string(get_safe_value(main_item_data, ['affiliate_url']))
@@ -233,7 +248,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
             cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
         return 0
 
-    # ★修正点: タイトルが空の場合のスキップ処理を追加 (これは以前の修正で追加済み)
+    # タイトルが空の場合のスキップ処理
     if not title: # titleがNoneまたは空文字列の場合
         print(f"警告: 製品タイトルが空のためスキップします。Product ID: {product_api_id} (Source: {source_api_name}).")
         # 関連するraw_api_dataレコードも処理済みとしてマーク
