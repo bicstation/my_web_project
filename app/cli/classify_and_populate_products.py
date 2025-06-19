@@ -249,7 +249,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
                 item_no = %s, price = %s, volume = %s, url = %s, affiliate_url = %s,
                 main_image_url = %s, og_image_url = %s, sample_movie_url = %s, sample_movie_capture_url = %s,
                 actresses_json = %s, genres_json = %s, series_json = %s,
-                source_api = %s, raw_api_data_id = %s, updated_at = %s
+                source_api = %s, raw_api_data_id = %s
             WHERE product_id = %s
         """
         cursor.execute(update_query, (
@@ -257,20 +257,21 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
             item_no, price, volume, url, affiliate_url,
             main_image_url, og_image_url, sample_movie_url, sample_movie_capture_url,
             actresses_json_str, genres_json_str, series_json_str, # JSONカラム
-            source_api_for_products, main_raw_api_data_id, now, product_api_id
+            source_api_for_products, main_raw_api_data_id, product_api_id 
         ))
         print(f"製品を更新しました: Product ID={product_api_id}, Title='{title}'")
     else:
         # 新しい製品を挿入
+        # productsテーブルの created_at と updated_at は MySQL で自動生成されるため、INSERT文からは除外
         insert_query = """
             INSERT INTO products (
                 product_id, title, original_title, caption, release_date, maker_name,
                 item_no, price, volume, url, affiliate_url,
                 main_image_url, og_image_url, sample_movie_url, sample_movie_capture_url,
                 actresses_json, genres_json, series_json,
-                source_api, raw_api_data_id, created_at, updated_at
+                source_api, raw_api_data_id
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
         cursor.execute(insert_query, (
@@ -278,7 +279,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
             item_no, price, volume, url, affiliate_url,
             main_image_url, og_image_url, sample_movie_url, sample_movie_capture_url,
             actresses_json_str, genres_json_str, series_json_str, # JSONカラム
-            source_api_for_products, main_raw_api_data_id, now, now
+            source_api_for_products, main_raw_api_data_id
         ))
         product_db_id = cursor.lastrowid # 新規挿入されたproductsテーブルのIDを取得
         print(f"新しい製品を挿入しました: Product ID={product_api_id}, Title='{title}'")
@@ -313,7 +314,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
         # 処理済みのraw_api_dataレコードにマークを付ける
         for raw_data_row in all_raw_data_for_product:
             update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
-            cursor.execute(update_raw_processed_sql, (now, raw_data_row[0]))
+            cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
 
     return 1 # 処理した製品数を返すため
 
