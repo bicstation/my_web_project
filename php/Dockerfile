@@ -1,24 +1,42 @@
-FROM php:8.3-fpm-alpine
+    # ベースとなるPHPイメージ
+    FROM php:8.2-fpm-alpine
 
-# システムパッケージのインストール
-# oniguruma-dev: mbstringの依存関係
-# libzip-dev: zip拡張の依存関係 (将来的にPHPMailerなどで必要になる可能性あり)
-# gd-dev: gd拡張の依存関係
-# libxslt-dev: xsl拡張の依存関係
-# freetype-dev, libjpeg-turbo-dev, libpng-dev: gd拡張の画像処理ライブラリ
-RUN apk add --no-cache \
-    oniguruma-dev \
-    libzip-dev \
-    gd-dev \
-    libxslt-dev \
-    freetype-dev \
-    libjpeg-turbo-dev \
-    libpng-dev && \
-    # 必要なPHP拡張をインストール
-    docker-php-ext-install mysqli pdo pdo_mysql mbstring gd xsl zip && \
-    # composer のインストール
-    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
-    php composer-setup.php --install-dir=/usr/local/bin --filename=composer && \
-    php -r "unlink('composer-setup.php');"
+    # コンテナのタイムゾーンを設定（必要であれば）
+    ARG TIMEZONE=Asia/Tokyo
+    RUN apk add --no-cache tzdata \
+        && cp /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
+        && echo "${TIMEZONE}" > /etc/timezone
 
-WORKDIR /var/www/html
+    # PHPに必要な拡張機能をインストール
+    # MySQLi (MySQL接続用) と gd (画像処理用) はよく使われます
+    RUN docker-php-ext-install pdo pdo_mysql opcache gd exif \
+        && docker-php-ext-enable opcache
+
+    # Composerをインストール
+    COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
+
+    # ===============================================
+    # ★★★ ここから追加するPython関連のインストール ★★★
+    # Alpine Linux のパッケージマネージャー 'apk' を使用
+    RUN apk add --no-cache python3 py3-pip
+
+    # pip を使ってPythonの依存ライブラリをインストール
+    # --break-system-packages は、Dockerイメージビルド時にもシステムパッケージ管理の警告を抑制
+    RUN pip3 install mysql-connector-python python-dotenv --break-system-packages
+    # ★★★ ここまで追加するPython関連のインストール ★★★
+    # ===============================================
+
+    # アプリケーションのコードをコンテナにコピー
+    # ローカルの /var/www/html と同期するための VOLUME 設定がある場合は不要かもしれません
+    # 必要に応じて適切なパスを設定してください。
+    # COPY . /var/www/html
+
+    # 作業ディレクトリを設定
+    WORKDIR /var/www/html
+
+    # 権限設定（オプション: アプリケーションの要件による）
+    # RUN chown -R www-data:www-data /var/www/html
+
+    # コンテナ起動時にPHP-FPMを実行
+    CMD ["php-fpm"]
+    
