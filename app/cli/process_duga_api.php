@@ -36,7 +36,7 @@ const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーター�
 const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
 const API_SOURCE_NAME = 'duga';      // このAPIのソース名
 // APIリクエストの連続失敗回数がこの値に達したら、本当に終了と判断する閾値
-const MAX_CONSECUTIVE_EMPTY_RESPONSES = 5; 
+const MAX_CONSECUTIVE_EMPTY_RESPONSES = 50; // 値を5から50に増やしました
 
 // .env から Duga API の設定を取得
 $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search';
@@ -154,21 +154,26 @@ try {
         if ($adult)      $additional_api_params['adult'] = $adult;
         if ($sort)       $additional_api_params['sort'] = $sort;
 
-        // Duga APIからアイテムデータを取得 (DugaApiClientクラスを使用)
-        // ここで DugaApiClient::getItems が ['items' => [...], 'count' => N] を返すことを期待
-        $api_response = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
-        $api_data_batch = $api_response['items'] ?? [];
-        // DugaApiClientの変更に合わせて 'total_hits' を 'count' に修正
-        $current_total_hits = $api_response['count'] ?? 0; 
-
         // 初回リクエスト時、または total_api_results がまだ設定されていない場合に設定
+        // total_api_results は一度取得した総件数を保持し続ける
         if ($total_api_results === -1) {
+            $api_response = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
+            $api_data_batch = $api_response['items'] ?? [];
+            $current_total_hits = $api_response['count'] ?? 0; 
+            
             $total_api_results = $current_total_hits;
             $logger->log("Duga APIから報告された検索結果総数: {$total_api_results}件");
+
             if ($total_api_results === 0) {
                 $logger->log("検索結果が0件のため、処理を終了します。");
                 break; // 0件ならループを抜ける
             }
+        } else {
+            // total_api_results が既に設定されている場合は、APIレスポンスの総件数を無視する
+            // （APIによっては現在のオフセットでの残り件数を返すことがあるため、初回の総件数を信頼する）
+            $api_response = $dugaApiClient->getItems($current_offset, API_RECORDS_PER_REQUEST, $additional_api_params);
+            $api_data_batch = $api_response['items'] ?? [];
+            // $api_response['count'] はこの後のループでは使用しない（初回の $total_api_results を使用するため）
         }
         
         // 取得したレコード数に基づいて、連続空レスポンスカウンターを更新
@@ -176,10 +181,9 @@ try {
             $consecutive_empty_responses++;
             $logger->warning("警告: Duga APIから空のアイテムデータが返されました。連続空レスポンス数: {$consecutive_empty_responses} (offset: {$current_offset})");
             
-            // 連続空レスポンス数が閾値に達した場合、または総件数を超過しそうな場合は終了
-            // もしAPIがこれ以上データを持っていないと判断できる場合は、ここで終了
-            if ($consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSES || $total_processed_records >= $total_api_results) {
-                $logger->log("連続で空のAPIレスポンスが続いたため、またはAPIの総件数に達した/超過したため、処理を終了します。");
+            // 連続空レスポンス数が閾値に達した場合、またはAPIの総件数に達した/超過しそうな場合は終了
+            if ($consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSES) {
+                $logger->log("連続で空のAPIレスポンスが続いたため、処理を終了します。");
                 break; // ループを抜ける
             }
             // 空のレスポンスでもオフセットは進めるべき。同じオフセットで無限にリトライするのを防ぐ。
