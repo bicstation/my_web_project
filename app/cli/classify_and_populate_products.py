@@ -433,7 +433,4 @@ if __name__ == "__main__":
     
     # 製品とカテゴリの分類・投入プロセスを実行
     main_classification_process()
-    fd;klgjg;df;ljgl;datagfdlngdfglkdf
-    dg;fg;lfdlg;fdl;gkldf
-    gdf;gjd;fg;lfdkg
-    
+
