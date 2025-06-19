@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS `raw_api_data` (
 -- 4. products テーブル (整形された商品データ用) - 画像カラムを簡素化し、og_imageを追加、カテゴリJSONカラム追加
 CREATE TABLE IF NOT EXISTS `products` (
     `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '主キー',
-    `product_id` VARCHAR(255) NOT NULL UNIQUE COMMENT 'API側で使用する一意のプロダクトID',
+    `product_id` VARCHAR(255) NOT NULL COMMENT 'API側で使用する一意のプロダクトID (UNIQUE制約を削除しました)',
     `title` VARCHAR(255) NOT NULL COMMENT '商品タイトル',
     `original_title` VARCHAR(255) NULL COMMENT '原題など、元のタイトル',
     `caption` TEXT NULL COMMENT '商品説明やキャプション',
@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS `products` (
     `actresses_json` JSON NULL COMMENT '関連女優名をJSON配列で保存',
     `genres_json` JSON NULL COMMENT '関連ジャンル名をJSON配列で保存',
     `series_json` JSON NULL COMMENT '関連シリーズ名をJSONで保存',
+    -- `genre` VARCHAR(255) NULL COMMENT 'メインジャンル文字列（複数ある場合はカンマ区切りなど）', -- このカラムはcategoriesテーブルと連携するため削除
     -- ★★★ ここまで追加/変更カラム ★★★
 
     `source_api` VARCHAR(50) NOT NULL COMMENT 'データの取得元API',
@@ -134,4 +135,3 @@ CREATE TABLE IF NOT EXISTS `media` (
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='ユーザーがアップロードしたメディアファイルを管理するテーブル';
-

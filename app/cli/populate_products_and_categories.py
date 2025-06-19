@@ -73,9 +73,24 @@ def get_or_create_category(cursor, conn, category_type: str, category_name: str)
     else:
         print(f"DEBUG: 新しいカテゴリを作成します: Type='{category_type}', Name='{category_name}'") # デバッグログ
         insert_sql = "INSERT INTO categories (type, name) VALUES (%s, %s)"
-        cursor.execute(insert_sql, (category_type, category_name))
-        conn.commit() # カテゴリの挿入は即座にコミット
-        return cursor.lastrowid
+        try:
+            cursor.execute(insert_sql, (category_type, category_name))
+            conn.commit() # カテゴリの挿入は即座にコミット
+            return cursor.lastrowid
+        except mysql.connector.Error as err:
+            if err.errno == 1062: # Duplicate entry for key 'uk_type_name'
+                print(f"DEBUG: カテゴリ '{category_type}' - '{category_name}' は既に存在するため、再取得します。")
+                conn.rollback() # ロールバックして、再度SELECTを試みる
+                cursor.execute(sql, (category_type, category_name))
+                result_after_rollback = cursor.fetchone()
+                if result_after_rollback:
+                    return result_after_rollback[0]
+                else:
+                    # ここに到達することは稀だが、もし再取得も失敗したらエラー
+                    print(f"ERROR: カテゴリ '{category_type}' - '{category_name}' の重複作成後の再取得に失敗しました。")
+                    raise
+            else:
+                raise # その他のDBエラーは再スロー
 
 def associate_product_with_category(cursor, conn, product_db_id: int, category_id: int):
     """
@@ -86,9 +101,17 @@ def associate_product_with_category(cursor, conn, product_db_id: int, category_i
     cursor.execute(sql, (product_db_id, category_id))
     if not cursor.fetchone():
         insert_sql = "INSERT INTO product_categories (product_id, category_id) VALUES (%s, %s)"
-        cursor.execute(insert_sql, (product_db_id, category_id))
-        print(f"DEBUG: product_categories に紐付けを挿入: product_id={product_db_id}, category_id={category_id}") # デバッグログ
-        # conn.commit() は populate_products_and_categories_from_raw_data の main commit でまとめて行う
+        try:
+            cursor.execute(insert_sql, (product_db_id, category_id))
+            print(f"DEBUG: product_categories に紐付けを挿入: product_id={product_db_id}, category_id={category_id}") # デバッグログ
+            # conn.commit() は populate_products_and_categories_main_loop の main commit でまとめて行う
+        except mysql.connector.Error as err:
+            if err.errno == 1062: # Duplicate entry for key 'uk_product_category'
+                print(f"DEBUG: product_categories 紐付け (product_id={product_db_id}, category_id={category_id}) は既に存在するためスキップします。")
+                # ロールバックは不要（ここでは個別のコミットはしないため）
+            else:
+                raise # その他のDBエラーは再スロー
+
 
 def process_single_product_id_batch(cursor, conn, product_api_id: str, source_api_name: str):
     """
@@ -96,6 +119,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
     productsテーブルを更新、カテゴリを統合して紐付ける。
     """
     # 関連するraw_api_dataを全て取得 (processed_atがNULLのもの)
+    # LIMIT はつけないように変更 (product_api_id, source_api で絞り込んでいるため)
     cursor.execute("""
         SELECT id, api_response_data, fetched_at
         FROM raw_api_data
@@ -129,36 +153,47 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         print(f"DEBUG: カテゴリ収集元のitem_data: {current_item_data}") # デバッグログ
 
         # ジャンル収集
-        genres = get_safe_value(current_item_data, ['genres'], [])
-        print(f"DEBUG: 抽出された genres: {genres} (タイプ: {type(genres)})") # デバッグログ
-        if isinstance(genres, dict) and 'genre' in genres: 
-            genres = get_safe_value(genres, ['genre'], [])
-            print(f"DEBUG: 'genre' キーを処理後の genres: {genres} (タイプ: {type(genres)})") # デバッグログ
-        for genre_entry in genres:
-            if isinstance(genre_entry, dict) and 'name' in genre_entry:
-                genre_name = clean_string(genre_entry['name'])
-                print(f"DEBUG: 収集されたジャンル名: '{genre_name}'") # デバッグログ
-                if genre_name:
-                    collected_genres.add(genre_name)
+        # Duga APIのgenres構造のバリエーションに対応
+        genres_data = get_safe_value(current_item_data, ['genres']) # Noneまたはリストまたは辞書
+        print(f"DEBUG: 抽出された genres_data: {genres_data} (タイプ: {type(genres_data)})")
+        if isinstance(genres_data, list): # [{"name": "カテゴリA"}] の場合
+            for genre_entry in genres_data:
+                if isinstance(genre_entry, dict) and 'name' in genre_entry:
+                    genre_name = clean_string(genre_entry['name'])
+                    if genre_name:
+                        collected_genres.add(genre_name)
+        elif isinstance(genres_data, dict) and 'genre' in genres_data: # {"genre": [{"name": "カテゴリA"}]} の場合
+            nested_genres = get_safe_value(genres_data, ['genre'], [])
+            if isinstance(nested_genres, list):
+                for genre_entry in nested_genres:
+                    if isinstance(genre_entry, dict) and 'name' in genre_entry:
+                        genre_name = clean_string(genre_entry['name'])
+                        if genre_name:
+                            collected_genres.add(genre_name)
         
         # 女優収集
-        actresses = get_safe_value(current_item_data, ['actresses'], [])
-        print(f"DEBUG: 抽出された actresses: {actresses} (タイプ: {type(actresses)})") # デバッグログ
-        if isinstance(actresses, dict) and 'actress' in actresses: 
-            actresses = get_safe_value(actresses, ['actress'], [])
-            print(f"DEBUG: 'actress' キーを処理後の actresses: {actresses} (タイプ: {type(actresses)})") # デバッグログ
-        for actress_entry in actresses:
-            if isinstance(actress_entry, dict) and 'name' in actress_entry:
-                actress_name = clean_string(actress_entry['name'])
-                print(f"DEBUG: 収集された女優名: '{actress_name}'") # デバッグログ
-                if actress_name:
-                    collected_actresses.add(actress_name)
+        # Duga APIのactresses構造のバリエーションに対応
+        actresses_data = get_safe_value(current_item_data, ['actresses']) # Noneまたはリストまたは辞書
+        print(f"DEBUG: 抽出された actresses_data: {actresses_data} (タイプ: {type(actresses_data)})")
+        if isinstance(actresses_data, list): # [{"name": "女優A"}] の場合
+            for actress_entry in actresses_data:
+                if isinstance(actress_entry, dict) and 'name' in actress_entry:
+                    actress_name = clean_string(actress_entry['name'])
+                    if actress_name:
+                        collected_actresses.add(actress_name)
+        elif isinstance(actresses_data, dict) and 'actress' in actresses_data: # {"actress": [{"name": "女優A"}]} の場合
+            nested_actresses = get_safe_value(actresses_data, ['actress'], [])
+            if isinstance(nested_actresses, list):
+                for actress_entry in nested_actresses:
+                    if isinstance(actress_entry, dict) and 'name' in actress_entry:
+                        actress_name = clean_string(actress_entry['name'])
+                        if actress_name:
+                            collected_actresses.add(actress_name)
         
         # シリーズ収集
-        series_name = clean_string(get_safe_value(current_item_data, ['series', 'name']))
-        print(f"DEBUG: 抽出されたシリーズ名: '{series_name}'") # デバッグログ
-        if series_name:
-            collected_series.add(series_name)
+        series_name_from_item = clean_string(get_safe_value(current_item_data, ['series', 'name']))
+        if series_name_from_item:
+            collected_series.add(series_name_from_item)
     
     print(f"DEBUG: 最終的に収集されたジャンル: {collected_genres}") # デバッグログ
     print(f"DEBUG: 最終的に収集された女優: {collected_actresses}") # デバッグログ
@@ -170,19 +205,26 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
     caption = clean_string(get_safe_value(main_item_data, ['caption']))
     release_date = parse_date(get_safe_value(main_item_data, ['release_date']))
     maker_name = clean_string(get_safe_value(main_item_data, ['maker_name']))
-    item_no = clean_string(get_safe_value(main_item_data, ['item_no']))
-    price = float(get_safe_value(main_item_data, ['price'], default=0.0))
+    item_no = clean_string(get_safe_value(main_item_data, ['itemno'])) # itemno に修正
+    price = float(str(get_safe_value(main_item_data, ['price'], default='0')).replace('円', '').replace(',', '')) # 円とカンマを除去してfloatに変換
     volume = convert_to_int(get_safe_value(main_item_data, ['volume']), default=0)
     url = clean_string(get_safe_value(main_item_data, ['url']))
-    affiliate_url = clean_string(get_safe_value(main_item_data, ['affiliate_url']))
-    image_url_small = clean_string(get_safe_value(main_item_data, ['image_url', 'small']))
-    image_url_medium = clean_string(get_safe_value(main_item_data, ['image_url', 'medium']))
-    image_url_large = clean_string(get_safe_value(main_item_data, ['image_url', 'large']))
-    jacket_url_small = clean_string(get_safe_value(main_item_data, ['jacket_url', 'small']))
-    jacket_url_medium = clean_string(get_safe_value(main_item_data, ['jacket_url', 'medium']))
-    jacket_url_large = clean_string(get_safe_value(main_item_data, ['jacket_url', 'large']))
-    sample_movie_url = clean_string(get_safe_value(main_item_data, ['sample_movie_url']))
-    sample_movie_capture_url = clean_string(get_safe_value(main_item_data, ['sample_movie_capture_url']))
+    affiliate_url = clean_string(get_safe_value(main_item_data, ['affiliateurl'])) # affiliateurl に修正
+    
+    # Duga APIのJSON構造に合わせた画像URLの抽出
+    # thumbnail は scaps、jacketimage は jacket、posterimage は poster に対応すると仮定
+    # products テーブルのカラム名に合わせて main_image_url, og_image_url に割り当てる
+    main_image_url = clean_string(get_safe_value(main_item_data, ['posterimage', 0, 'large'])) or \
+                     clean_string(get_safe_value(main_item_data, ['jacketimage', 0, 'large'])) or \
+                     clean_string(get_safe_value(main_item_data, ['thumbnail', 0, 'image']))
+    
+    og_image_url = clean_string(get_safe_value(main_item_data, ['jacketimage', 0, 'large'])) or \
+                   clean_string(get_safe_value(main_item_data, ['posterimage', 0, 'large'])) or \
+                   clean_string(get_safe_value(main_item_data, ['thumbnail', 0, 'image']))
+    
+    sample_movie_url = clean_string(get_safe_value(main_item_data, ['samplemovie', 0, 'midium', 'movie']))
+    sample_movie_capture_url = clean_string(get_safe_value(main_item_data, ['samplemovie', 0, 'midium', 'capture']))
+
     source_api_for_products = source_api_name 
     
     if not product_api_id:
@@ -210,11 +252,6 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
                 source_api = %s, raw_api_data_id = %s, updated_at = %s
             WHERE product_id = %s
         """
-        # main_image_url には posterimage.large を使用
-        main_image_url = image_url_large or image_url_medium or image_url_small
-        # og_image_url には jacketimage.large を使用
-        og_image_url = jacket_url_large or jacket_url_medium or jacket_url_small
-
         cursor.execute(update_query, (
             title, original_title, caption, release_date, maker_name,
             item_no, price, volume, url, affiliate_url,
@@ -237,11 +274,6 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
-        # main_image_url には posterimage.large を使用
-        main_image_url = image_url_large or image_url_medium or image_url_small
-        # og_image_url には jacketimage.large を使用
-        og_image_url = jacket_url_large or jacket_url_medium or jacket_url_small
-
         cursor.execute(insert_query, (
             product_api_id, title, original_title, caption, release_date, maker_name,
             item_no, price, volume, url, affiliate_url,
@@ -399,7 +431,7 @@ if __name__ == "__main__":
                     "actresses": [{"name": "女優X"}],
                     "series": {"name": "シリーズS1"},
                     "url": "http://example.com/test/1",
-                    "affiliate_url": "http://aff.example.com/test/1",
+                    "affiliate_url": "http://affiliate.example.com/test/1",
                     "posterimage": [{"large": "http://example.com/img/p/large1.jpg"}],
                     "jacketimage": [{"large": "http://example.com/img/j/large1.jpg"}],
                 }
@@ -414,7 +446,7 @@ if __name__ == "__main__":
                     "actresses": [{"name": "女優Y"}],
                     "series": {"name": "シリーズS2"},
                     "url": "http://example.com/test/1",
-                    "affiliate_url": "http://aff.example.com/test/1",
+                    "affiliate_url": "http://affiliate.example.com/test/1",
                     "posterimage": [{"large": "http://example.com/img/p/large1.jpg"}],
                     "jacketimage": [{"large": "http://example.com/img/j/large1.jpg"}],
                 }
@@ -429,7 +461,7 @@ if __name__ == "__main__":
                     "actresses": [{"name": "女優Z"}],
                     "series": {"name": "シリーズS3"},
                     "url": "http://example.com/test/2",
-                    "affiliate_url": "http://aff.example.com/test/2",
+                    "affiliate_url": "http://affiliate.example.com/test/2",
                     "posterimage": [{"large": "http://example.com/img/p/large2.jpg"}],
                     "jacketimage": [{"large": "http://example.com/img/j/large2.jpg"}],
                 }
