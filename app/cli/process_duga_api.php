@@ -33,8 +33,8 @@ const DEFAULT_SORT_PARAM = 'favorite';
 const DEFAULT_BANNER_ID = '01';
 // Duga APIが一度に返すレコード数 (APIのドキュメントを確認し、最大値を設定すること。通常100〜500)
 const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーターの上限
-const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
-const API_SOURCE_NAME = 'duga';      // このAPIのソース名
+const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
+const API_SOURCE_NAME = 'duga';       // このAPIのソース名
 // APIリクエストの連続失敗回数がこの値に達したら、本当に終了と判断する閾値
 const MAX_CONSECUTIVE_EMPTY_RESPONSES = 500; // 値を200から500に増やしました
 
@@ -196,12 +196,18 @@ try {
 
         // 取得したAPIデータをraw_api_dataのバッファに準備
         foreach ($api_data_batch as $api_record_wrapper) {
-            $api_record = $api_record_wrapper['item'] ?? null;
+            // ★修正点: 'item' キーのネストを削除し、直接 $api_record_wrapper を商品データとして使用★
+            // Duga APIの'items'配列の各要素が直接商品データであると仮定
+            $api_record = $api_record_wrapper; 
 
-            if (empty($api_record)) {
-                $logger->error("警告: 'item' キーが見つからないか空のためレコードをスキップします: " . json_encode($api_record_wrapper));
-                continue;
-            }
+            // 元々あった $api_record が empty の場合のチェックは、
+            // $api_record = $api_record_wrapper; としたため不要になる。
+            // もし $api_record_wrapper 自体が空の連想配列である場合は、
+            // productid のチェックでスキップされるため問題ない。
+            // if (empty($api_record)) {
+            //     $logger->error("警告: レコードが空のためスキップします: " . json_encode($api_record_wrapper));
+            //     continue;
+            // }
 
             $content_id = $api_record['productid'] ?? null;
             
@@ -212,8 +218,8 @@ try {
 
             // raw_api_data テーブル用のデータ準備 (カラム名をSQLスキーマに合わせる)
             $raw_data_entry = [
-                'product_id'        => $content_id,           // SQL: product_id
-                'api_response_data' => json_encode($api_record), // SQL: api_response_data
+                'product_id'        => $content_id,         // SQL: product_id
+                'api_response_data' => json_encode($api_record), // SQL: api_response_data ($api_record は正しい商品データ)
                 'source_api'        => API_SOURCE_NAME,      // SQL: source_api
                 'fetched_at'        => date('Y-m-d H:i:s'),
                 'updated_at'        => date('Y-m-d H:i:s')   
