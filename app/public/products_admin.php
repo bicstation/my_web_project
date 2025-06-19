@@ -1,6 +1,10 @@
 <?php
 // C:\project\my_web_project\app\public\products_admin.php
 
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 // Composerのオートローダーを読み込む
 // これにより、App名前空間下のクラスや、vlucas/phpdotenvなどのComposerが管理するライブラリが自動的にロードされます。
 require_once __DIR__ . '/../../vendor/autoload.php';
@@ -15,23 +19,26 @@ use App\Core\Logger;
 use App\Core\Database;
 use App\Api\DugaApiClient;
 use App\Util\DbBatchInsert; // 必要に応じてDbBatchInsertもインポート
-// use PDOException;           // PDO関連の例外をキャッチするために追加 - この行を削除しました
 
 // 共通初期化ファイルを読み込む（セッションハンドラ設定とsession_start()を含む）
 // init.php 内で Composer のオートローダーを読み込んだり、.env をロードしたりする必要はなくなります。
 // init.php は主にセッション開始、認証チェックなどの初期化処理に専念します。
-// require_once __DIR__ . '/init.php';
+// require_once __DIR__ . '/init.php'; // この行はコメントアウトまたは削除された状態を維持します。
 
 // データベース接続設定を.envから取得
 $dbConfig = [
-    'host'    => $_ENV['DB_HOST'] ?? 'localhost',
-    'dbname'  => $_ENV['DB_NAME'] ?? 'web_project_db',
-    'user'    => $_ENV['DB_USER'] ?? 'root',
-    'pass'    => $_ENV['DB_PASS'] ?? 'password',
-    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
+    'host'      => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname'    => $_ENV['DB_NAME'] ?? 'tiper', // ★修正: web_project_db から tiper に変更
+    'user'      => $_ENV['DB_USER'] ?? 'root',
+    'pass'      => $_ENV['DB_PASS'] ?? 'password',
+    'charset'   => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
 ];
 
 // このページは認証が必要な場合、ここでセッションチェックを行う
+// (セッションが開始されていることを前提とする。必要に応じて session_start() を追加)
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 if (!isset($_SESSION['user_id'])) {
     header("Location: /login.php");
     exit();
@@ -47,7 +54,8 @@ $dbBatchInserter = null; // 必要であればインスタンス化
 
 try {
     // Loggerクラスのインスタンス化
-    $logger = new Logger('products_admin_processing.log'); // 管理画面専用のログファイル
+    // ログファイルのパスを現在のプロジェクト構成に合わせて調整
+    $logger = new Logger(__DIR__ . '/../logs/products_admin_processing.log'); // 管理画面専用のログファイル
     $logger->log("products_admin.php ページアクセス処理を開始します。");
 
     // データベース接続の確立
@@ -55,11 +63,11 @@ try {
     $pdo = $database->getConnection(); // PDOインスタンスを取得
 
     // Duga APIクライアントのインスタンス化
-    $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'https://api.duga.jp/v1/';
+    $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search'; // .envと合わせる
     $dugaApiKey = $_ENV['DUGA_API_KEY'] ?? 'YOUR_DUGA_API_KEY_HERE';
     $dugaApiClient = new DugaApiClient($dugaApiUrl, $dugaApiKey, $logger);
 
-    // DbBatchInsertヘルパークラスのインスタンス化 (CLIトリガーとは直接関係ないが、手動登録で必要になるかも)
+    // DbBatchInsertヘルパークラスのインスタンス化 (手動登録で必要になるかも)
     $dbBatchInserter = new DbBatchInsert($database, $logger);
 
 
@@ -84,11 +92,11 @@ $message = ""; // 成功・失敗メッセージを格納する変数 (初期化
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'run_duga_api_cli') {
     // ログファイルのパス (CLIスクリプトが出力するログと同じ場所)
     // コンテナ内のパスに変換されることを想定
-    $log_file_container_path = '/var/www/html/app/duga_api_processing.log'; // ★修正: app ディレクトリを明示的に指定
+    $log_file_container_path = '/var/www/html/app/logs/duga_api_processing.log'; // CLIスクリプトのログパスと一致させる
 
     // CLIスクリプトのパス（Dockerコンテナ内のパス）
     // プロジェクトルートが /var/www/html にマウントされているため、正しいパスは /var/www/html/app/cli/process_duga_api.php
-    $cli_script_path = '/var/www/html/app/cli/process_duga_api.php'; // ★修正: app ディレクトリを明示的に指定
+    $cli_script_path = '/var/www/html/app/cli/process_duga_api.php';
     
     // API検索条件の取得
     $start_date = $_POST['start_date'] ?? '';
@@ -148,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $logger->error("Failed to execute Duga API CLI command (shell_exec returned false). Command: '{$command}'");
     } else {
         // コマンドが起動できたと判断し、成功メッセージを表示
-        $message = "<div class='alert alert-success'>Duga APIからのデータ取得と保存処理をバックグラウンドで開始しました。<br>進行状況は `app/duga_api_processing.log` を確認してください。</div>";
+        $message = "<div class='alert alert-success'>Duga APIからのデータ取得と保存処理をバックグラウンドで開始しました。<br>進行状況は `app/logs/duga_api_processing.log` を確認してください。</div>";
         $logger->log("Duga API CLI script initiated (command sent to shell). Output (if any): " . ($output ?? 'NULL')); // nullの場合も明示的にログに記録
     }
 }
@@ -169,21 +177,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             // raw_api_data に挿入
             $raw_api_data_entry = [
-                'source_name'    => $source_api,
-                'api_product_id' => uniqid('manual_'), // 手動登録の場合、ユニークなIDを生成
-                'row_json_data'  => $row_data,
+                'source_api'     => $source_api, // source_name から source_api に修正
+                'product_id'     => uniqid('manual_'), // api_product_id から product_id に修正
+                'api_response_data' => $row_data, // row_json_data から api_response_data に修正
                 'fetched_at'     => date('Y-m-d H:i:s'),
                 'updated_at'     => date('Y-m-d H:i:s')
             ];
-            $dbBatchInserter->insertOrUpdate('raw_api_data', [$raw_api_data_entry], ['row_json_data', 'fetched_at', 'updated_at']);
+            // insertOrUpdate メソッドは DbBatchInsert に存在すると仮定
+            // products_admin.phpは単一のデータ挿入なので、直接PDO::prepare/executeを使用する方がシンプル
+            $stmt_raw = $pdo->prepare("
+                INSERT INTO raw_api_data (source_api, product_id, api_response_data, fetched_at, updated_at)
+                VALUES (:source_api, :product_id, :api_response_data, :fetched_at, :updated_at)
+            ");
+            $stmt_raw->execute([
+                ':source_api'        => $raw_api_data_entry['source_api'],
+                ':product_id'        => $raw_api_data_entry['product_id'],
+                ':api_response_data' => $raw_api_data_entry['api_response_data'],
+                ':fetched_at'        => $raw_api_data_entry['fetched_at'],
+                ':updated_at'        => $raw_api_data_entry['updated_at'],
+            ]);
+            $raw_api_data_id = $pdo->lastInsertId();
             
-            // 挿入された raw_api_data のIDを取得
-            $raw_api_data_id = $dbBatchInserter->getRawApiDataId($raw_api_data_entry['source_name'], $raw_api_data_entry['api_product_id']);
-
             if ($raw_api_data_id) {
                 // products テーブルに挿入
                 $product_entry = [
-                    'product_id'    => $raw_api_data_entry['api_product_id'], // raw_api_data と同じIDを使用
+                    'product_id'    => $raw_api_data_entry['product_id'], // raw_api_data と同じIDを使用
                     'title'         => $product_title,
                     'release_date'  => $release_date,
                     'maker_name'    => null, // 手動登録ではmaker_nameやgenreは空または別途入力フィールドが必要
@@ -195,8 +213,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     'created_at'    => date('Y-m-d H:i:s'),
                     'updated_at'    => date('Y-m-d H:i:s')
                 ];
-                $dbBatchInserter->insertOrUpdate('products', [$product_entry], ['title', 'release_date', 'maker_name', 'genre', 'url', 'image_url', 'source_api', 'row_api_data_id', 'updated_at']);
-                
+                $stmt_products = $pdo->prepare("
+                    INSERT INTO products (product_id, title, release_date, maker_name, genre, url, image_url, source_api, row_api_data_id, created_at, updated_at)
+                    VALUES (:product_id, :title, :release_date, :maker_name, :genre, :url, :image_url, :source_api, :row_api_data_id, :created_at, :updated_at)
+                    ON DUPLICATE KEY UPDATE
+                        title = VALUES(title),
+                        release_date = VALUES(release_date),
+                        maker_name = VALUES(maker_name),
+                        genre = VALUES(genre),
+                        url = VALUES(url),
+                        image_url = VALUES(image_url),
+                        source_api = VALUES(source_api),
+                        updated_at = VALUES(updated_at)
+                ");
+                $stmt_products->execute($product_entry); // 配列を直接渡す
+
                 $message = "<div class='alert alert-success'>商品「" . htmlspecialchars($product_title) . "」が正常に登録されました。</div>";
                 $logger->log("手動商品登録成功: " . $product_title);
             } else {
@@ -219,7 +250,7 @@ try {
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $logger->error("商品一覧の取得中にエラーが発生しました: " . htmlspecialchars($e->getMessage()));
-    $message = "<div class='alert alert-danger'>商品一覧の取得中にエラーが発生しました。</div>";
+    $message = "<div class='alert alert-danger'>商品一覧の取得中にエラーが発生しました。データベース接続またはproductsテーブルのスキーマを確認してください。</div>"; // より具体的なメッセージに修正
 }
 
 ?>
@@ -373,7 +404,7 @@ try {
                 </form>
                 <small class="text-muted mt-2 d-block">
                     <strong>注意:</strong> この機能は開発環境でのテスト目的です。本番環境では、専用のバッチ処理システムやキューイングシステムを介して実行することを強く推奨します。
-                    詳細なログは `app/duga_api_processing.log` で確認できます。
+                    詳細なログは `app/logs/duga_api_processing.log` で確認できます。
                 </small>
             </div>
         </div>

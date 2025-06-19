@@ -36,7 +36,7 @@ const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーター�
 const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
 const API_SOURCE_NAME = 'duga';      // このAPIのソース名
 // APIリクエストの連続失敗回数がこの値に達したら、本当に終了と判断する閾値
-const MAX_CONSECUTIVE_EMPTY_RESPONSES = 50; // 値を5から50に増やしました
+const MAX_CONSECUTIVE_EMPTY_RESPONSES = 500; // 値を200から500に増やしました
 
 // .env から Duga API の設定を取得
 $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search';
