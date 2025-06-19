@@ -134,7 +134,10 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
     main_raw_api_data_id = main_raw_data_row[0]
     main_raw_json_data = json.loads(main_raw_data_row[1])
     
-    main_item_data = main_raw_json_data.get('item', {})
+    # ★★★ 修正点: main_item_data の割り当てを修正 ★★★
+    # main_raw_json_data 自体が既に 'item' の中身なので、直接使用
+    main_item_data = main_raw_json_data 
+    # ★★★ 修正終わり ★★★
 
     # 全てのraw_api_dataレコードからカテゴリ情報を収集
     collected_genres = set()
@@ -147,7 +150,10 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
 
     for raw_data_row in all_raw_data_for_product:
         current_raw_json_data = json.loads(raw_data_row[1])
-        current_item_data = current_raw_json_data.get('item', {})
+        # ★★★ 修正点: current_item_data の割り当てを修正 ★★★
+        # current_raw_json_data 自体が既に 'item' の中身なので、直接使用
+        current_item_data = current_raw_json_data 
+        # ★★★ 修正終わり ★★★
 
         # ジャンル収集
         genres = get_safe_value(current_item_data, ['genres'], [])
@@ -227,7 +233,7 @@ def process_product_batch_from_raw_data(cursor, conn, product_api_id: str, sourc
             cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
         return 0
 
-    # ★修正点: タイトルが空の場合のスキップ処理を追加
+    # ★修正点: タイトルが空の場合のスキップ処理を追加 (これは以前の修正で追加済み)
     if not title: # titleがNoneまたは空文字列の場合
         print(f"警告: 製品タイトルが空のためスキップします。Product ID: {product_api_id} (Source: {source_api_name}).")
         # 関連するraw_api_dataレコードも処理済みとしてマーク
