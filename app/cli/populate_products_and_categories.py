@@ -67,6 +67,8 @@ def clean_string(value):
 def get_or_create_category(cursor, conn, category_type: str, category_name: str) -> int:
     """
     カテゴリが存在すればそのIDを返し、なければ新規作成してIDを返す。
+    この関数は外部から呼び出されるトランザクション内で実行されることを想定し、
+    独自のコミットやロールバックは行いません。
     """
     sql = "SELECT id FROM categories WHERE type = %s AND name = %s"
     print(f"DEBUG SQL: get_or_create_category SELECT: SQL='{sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
@@ -80,17 +82,16 @@ def get_or_create_category(cursor, conn, category_type: str, category_name: str)
         print(f"DEBUG SQL: get_or_create_category INSERT: SQL='{insert_sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
         try:
             cursor.execute(insert_sql, (category_type, category_name))
-            # conn.commit() は削除。メインのトランザクションでまとめてコミット。
             return cursor.lastrowid
         except mysql.connector.Error as err:
             if err.errno == 1062: # Duplicate entry for key 'uk_type_name'
+                # 重複エラーの場合、すでに存在するので再取得を試みる
                 print(f"DEBUG: カテゴリ '{category_type}' - '{category_name}' は既に存在するため、再取得します。")
-                conn.rollback() # ロールバックして、再度SELECTを試みる
-                print(f"DEBUG SQL: get_or_create_category SELECT (after rollback): SQL='{sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
+                print(f"DEBUG SQL: get_or_create_category SELECT (after retry): SQL='{sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
                 cursor.execute(sql, (category_type, category_name))
-                result_after_rollback = cursor.fetchone()
-                if result_after_rollback:
-                    return result_after_rollback[0]
+                result_after_retry = cursor.fetchone()
+                if result_after_retry:
+                    return result_after_retry[0]
                 else:
                     # ここに到達することは稀だが、もし再取得も失敗したらエラー
                     print(f"ERROR: カテゴリ '{category_type}' - '{category_name}' の重複作成後の再取得に失敗しました。")
@@ -112,7 +113,7 @@ def associate_product_with_category(cursor, conn, product_db_id: int, category_i
         try:
             cursor.execute(insert_sql, (product_db_id, category_id))
             print(f"DEBUG: product_categories に紐付けを挿入: product_id={product_db_id}, category_id={category_id}") # デバッグログ
-            # conn.commit() は populate_products_and_categories_main_loop の main commit でまとめて行う
+            # conn.commit() は populate_products_and_categories_main_loop の main commit でまとめて行う (変更なし)
         except mysql.connector.Error as err:
             if err.errno == 1062: # Duplicate entry for key 'uk_product_category'
                 print(f"DEBUG: product_categories 紐付け (product_id={product_db_id}, category_id={category_id}) は既に存在するためスキップします。")
@@ -163,24 +164,54 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         print(f"DEBUG: カテゴリ収集元のitem_data: {current_item_data}") # デバッグログ
 
         # ジャンル収集 (Duga APIの 'category' -> 'data' に対応)
-        category_wrapper = get_safe_value(current_item_data, ['category'])
-        genres_data = get_safe_value(category_wrapper, ['data'], []) # category.data を取得
+        categories_raw = get_safe_value(current_item_data, ['category'])
+        genres_to_process = []
 
-        print(f"DEBUG: 抽出された genres_data (from category.data): {genres_data} (タイプ: {type(genres_data)})")
-        if isinstance(genres_data, list):
-            for genre_entry in genres_data:
+        if isinstance(categories_raw, list):
+            # ログに見られる形式 [{'data': ...}] の場合
+            for entry in categories_raw:
+                if isinstance(entry, dict) and 'data' in entry:
+                    # data が単一の辞書の場合
+                    if isinstance(entry['data'], dict) and 'name' in entry['data']:
+                        genres_to_process.append(entry['data'])
+                    # data がリストの場合
+                    elif isinstance(entry['data'], list):
+                        genres_to_process.extend(entry['data'])
+        elif isinstance(categories_raw, dict) and 'data' in categories_raw:
+            # 公式ドキュメントの形式 {'data': [...]} の場合
+            if isinstance(categories_raw['data'], list):
+                genres_to_process.extend(categories_raw['data'])
+            elif isinstance(categories_raw['data'], dict) and 'name' in categories_raw['data']:
+                genres_to_process.append(categories_raw['data']) # 単一カテゴリの場合
+
+        print(f"DEBUG: 抽出された genres_data (from category.data processing): {genres_to_process} (タイプ: {type(genres_to_process)})")
+        if genres_to_process:
+            for genre_entry in genres_to_process:
                 if isinstance(genre_entry, dict) and 'name' in genre_entry:
                     genre_name = clean_string(genre_entry['name'])
                     if genre_name:
                         collected_genres.add(genre_name)
 
         # 女優収集 (Duga APIの 'performer' -> 'data' に対応)
-        performer_wrapper = get_safe_value(current_item_data, ['performer'])
-        actresses_data = get_safe_value(performer_wrapper, ['data'], []) # performer.data を取得
+        performers_raw = get_safe_value(current_item_data, ['performer'])
+        actresses_to_process = []
 
-        print(f"DEBUG: 抽出された actresses_data (from performer.data): {actresses_data} (タイプ: {type(actresses_data)})")
-        if isinstance(actresses_data, list):
-            for actress_entry in actresses_data:
+        if isinstance(performers_raw, list):
+            for entry in performers_raw:
+                if isinstance(entry, dict) and 'data' in entry:
+                    if isinstance(entry['data'], dict) and 'name' in entry['data']:
+                        actresses_to_process.append(entry['data'])
+                    elif isinstance(entry['data'], list):
+                        actresses_to_process.extend(entry['data'])
+        elif isinstance(performers_raw, dict) and 'data' in performers_raw:
+            if isinstance(performers_raw['data'], list):
+                actresses_to_process.extend(performers_raw['data'])
+            elif isinstance(performers_raw['data'], dict) and 'name' in performers_raw['data']:
+                actresses_to_process.append(performers_raw['data'])
+
+        print(f"DEBUG: 抽出された actresses_data (from performer.data processing): {actresses_to_process} (タイプ: {type(actresses_to_process)})")
+        if actresses_to_process:
+            for actress_entry in actresses_to_process:
                 if isinstance(actress_entry, dict) and 'name' in actress_entry:
                     actress_name = clean_string(actress_entry['name'])
                     if actress_name:
@@ -279,6 +310,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
             source_api_for_products, main_raw_api_data_id, now, product_api_id
         )
         print(f"DEBUG SQL: UPDATE PRODUCT: SQL='{update_query}', Params={params}") # デバッグログ
+        print(f"DEBUG SQL: UPDATE PRODUCT PARAM TYPES: {[type(p).__name__ for p in params]}") # ★追加: パラメータの型をログ出力
         cursor.execute(update_query, params)
         print(f"製品を更新しました: Product ID={product_api_id}, Title='{title}'")
     else:
@@ -305,6 +337,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
             source_api_for_products, main_raw_api_data_id, now, now
         )
         print(f"DEBUG SQL: INSERT PRODUCT: SQL='{insert_query}', Params={params}") # デバッグログ
+        print(f"DEBUG SQL: INSERT PRODUCT PARAM TYPES: {[type(p).__name__ for p in params]}") # ★追加: パラメータの型をログ出力
         cursor.execute(insert_query, params)
         product_db_id = cursor.lastrowid 
         print(f"新しい製品を挿入しました: Product ID={product_api_id}, Title='{title}'")
