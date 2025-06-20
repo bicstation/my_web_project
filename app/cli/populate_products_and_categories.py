@@ -354,7 +354,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
                 genre,
                 source_api, raw_api_data_id, created_at, updated_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
         params = (
@@ -408,8 +408,8 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         # 処理済みのraw_api_dataレコードにマークを付ける
         for raw_data_row in all_raw_data_for_product:
             update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
-            logger.debug(f"DEBUG SQL: UPDATE RAW PROCESSED: SQL='{update_raw_processed_sql}', Params=(''{now}'', {raw_data_row[0]})")
-            cursor.execute(update_raw_processed_sql, (now, raw_data_row[0]))
+            logger.debug(f"DEBUG SQL: UPDATE RAW PROCESSED: SQL='{update_raw_processed_sql}', Params=(''{datetime.now()}'', {raw_data_row[0]})")
+            cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
 
     return 1
 
@@ -493,6 +493,24 @@ def populate_products_and_categories_main_loop():
 # ==============================================================================
 
 if __name__ == "__main__":
+    # スクリプト実行前に既存のログファイルをクリア
+    try:
+        if os.path.exists(log_file_path):
+            os.remove(log_file_path)
+            # ロガーのハンドラをリセットして、新しいファイルに書き込めるようにする
+            for handler in logger.handlers[:]: # リストをコピーしてイテレート
+                if isinstance(handler, logging.FileHandler):
+                    handler.close()
+                    logger.removeHandler(handler)
+            # ファイルハンドラを再設定
+            new_file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+            new_file_handler.setLevel(logging.DEBUG)
+            new_file_handler.setFormatter(file_formatter)
+            logger.addHandler(new_file_handler)
+            logger.info(f"既存のログファイル '{log_file_path}' をクリアしました。")
+    except OSError as e:
+        logger.error(f"ログファイルのクリア中にエラーが発生しました: {e}")
+
     conn_check = None
     try:
         conn_check = mysql.connector.connect(**DB_CONFIG)
