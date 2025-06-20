@@ -33,12 +33,10 @@ const DEFAULT_SORT_PARAM = 'favorite';
 const DEFAULT_BANNER_ID = '01';
 // Duga APIが一度に返すレコード数 (APIのドキュメントを確認し、最大値を設定すること。通常100〜500)
 const API_RECORDS_PER_REQUEST = 100; // 例: Duga APIのhitsパラメーターの上限
-const DB_BUFFER_SIZE = 500;           // データベースへのバッチ処理のチャンクサイズ
-const API_SOURCE_NAME = 'duga';       // このAPIのソース名
+const DB_BUFFER_SIZE = 500;          // データベースへのバッチ処理のチャンクサイズ
+const API_SOURCE_NAME = 'duga';      // このAPIのソース名
 // APIリクエストの連続失敗回数がこの値に達したら、本当に終了と判断する閾値
-const MAX_CONSECUTIVE_EMPTY_RESPONSES = 1000; // 値を500から1000に増やしました
-// ★追加: API取得の最大実行回数 (offsetのループ回数) ★
-const MAX_API_FETCH_ITERATIONS = 100; // デフォルトは100回。必要に応じて調整してください。
+const MAX_CONSECUTIVE_EMPTY_RESPONSES = 500; 
 
 // .env から Duga API の設定を取得
 $dugaApiUrl = $_ENV['DUGA_API_URL'] ?? 'http://affapi.duga.jp/search';
@@ -215,8 +213,13 @@ try {
         foreach ($api_data_batch as $api_record_wrapper) {
             $api_record = $api_record_wrapper['item'] ?? null;
 
-            if (empty($api_record)) {
-                $logger->error("警告: 'item' キーが見つからないか空のためレコードをスキップします: " . json_encode($api_record_wrapper));
+            // ★修正点★ $api_record が有効な連想配列やオブジェクトでない場合、または空の場合をより厳密にチェック
+            if (
+                !is_array($api_record) && !is_object($api_record) ||
+                (is_array($api_record) && count($api_record) === 0) ||
+                (is_object($api_record) && !count((array)$api_record))
+            ) {
+                $logger->error("警告: 'item' キーが有効なデータを持たないか空のためレコードをスキップします: " . json_encode($api_record_wrapper));
                 continue;
             }
 
