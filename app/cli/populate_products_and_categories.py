@@ -164,6 +164,8 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         print(f"DEBUG: カテゴリ収集元のitem_data: {current_item_data}") # デバッグログ
 
         # ジャンル収集 (Duga APIの 'category' -> 'data' に対応)
+        # Duga APIの 'category' や 'performer' は [{'data': {...}}] または {'data': [...]} の形式が混在する
+        # このロジックは両方を適切に処理するように設計されています。
         categories_raw = get_safe_value(current_item_data, ['category'])
         genres_to_process = []
 
