@@ -2,6 +2,10 @@ import os
 import mysql.connector
 import json
 from datetime import datetime
+import sys # sysモジュールを追加
+
+print("DEBUG: populate_products_and_categories.py スクリプト開始。") # スクリプト開始のデバッグログを追加
+sys.stdout.flush() # 出力を即座にフラッシュ
 
 # Dotenvライブラリを使って.envファイルをロード
 from dotenv import load_dotenv
@@ -616,4 +620,3 @@ def insert_raw_api_data_dummy(conn, item_json_data_wrapper, source_api_name, pro
     cursor.execute(insert_query, (product_id_val, data_json_str, source_api_name, now, now))
     conn.commit()
     print(f"raw_api_data (ダミー) を挿入しました (product_id: {product_id_val}, source_api: {source_api_name})。")
-
