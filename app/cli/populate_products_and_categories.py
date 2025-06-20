@@ -206,6 +206,11 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
 
     # productsテーブルに挿入するデータをメインの生データから抽出
     title = clean_string(get_safe_value(main_item_data, ['title']))
+    print(f"DEBUG: 抽出されたタイトル (product_id: {product_api_id}): '{title}'") # ★追加デバッグログ★
+    # 「タイトルなし」をデフォルト値として使用
+    if not title:
+        title = "タイトルなし"
+
     original_title = clean_string(get_safe_value(main_item_data, ['original_title']))
     caption = clean_string(get_safe_value(main_item_data, ['caption']))
     release_date = parse_date(get_safe_value(main_item_data, ['release_date']))
@@ -327,7 +332,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         # 処理済みのraw_api_dataレコードにマークを付ける
         for raw_data_row in all_raw_data_for_product:
             update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
-            cursor.execute(update_raw_processed_sql, (now, raw_data_row[0]))
+            cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
 
     return 1 
 
