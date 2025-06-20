@@ -22,7 +22,6 @@ DB_CONFIG = {
 def get_safe_value(data, path, default=None):
     """
     ネストされたJSONデータから安全に値を取得する。
-    リスト内の要素にアクセスする場合は、パスに整数インデックスを含める。
     例: get_safe_value(item_data, ['item', 'title'])
     例: get_safe_value(item_data, ['posterimage', 0, 'large'])
     """
@@ -70,6 +69,7 @@ def get_or_create_category(cursor, conn, category_type: str, category_name: str)
     カテゴリが存在すればそのIDを返し、なければ新規作成してIDを返す。
     """
     sql = "SELECT id FROM categories WHERE type = %s AND name = %s"
+    print(f"DEBUG SQL: get_or_create_category SELECT: SQL='{sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
     cursor.execute(sql, (category_type, category_name))
     result = cursor.fetchone()
     if result:
@@ -77,14 +77,16 @@ def get_or_create_category(cursor, conn, category_type: str, category_name: str)
     else:
         print(f"DEBUG: 新しいカテゴリを作成します: Type='{category_type}', Name='{category_name}'") # デバッグログ
         insert_sql = "INSERT INTO categories (type, name) VALUES (%s, %s)"
+        print(f"DEBUG SQL: get_or_create_category INSERT: SQL='{insert_sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
         try:
             cursor.execute(insert_sql, (category_type, category_name))
-            conn.commit() # カテゴリの挿入は即座にコミット
+            # conn.commit() は削除。メインのトランザクションでまとめてコミット。
             return cursor.lastrowid
         except mysql.connector.Error as err:
             if err.errno == 1062: # Duplicate entry for key 'uk_type_name'
                 print(f"DEBUG: カテゴリ '{category_type}' - '{category_name}' は既に存在するため、再取得します。")
                 conn.rollback() # ロールバックして、再度SELECTを試みる
+                print(f"DEBUG SQL: get_or_create_category SELECT (after rollback): SQL='{sql}', Params=(''{category_type}'', ''{category_name}'')") # デバッグログ
                 cursor.execute(sql, (category_type, category_name))
                 result_after_rollback = cursor.fetchone()
                 if result_after_rollback:
@@ -102,9 +104,11 @@ def associate_product_with_category(cursor, conn, product_db_id: int, category_i
     重複挿入を避ける。
     """
     sql = "SELECT id FROM product_categories WHERE product_id = %s AND category_id = %s"
+    print(f"DEBUG SQL: associate_product_with_category SELECT: SQL='{sql}', Params=({product_db_id}, {category_id})") # デバッグログ
     cursor.execute(sql, (product_db_id, category_id))
     if not cursor.fetchone():
         insert_sql = "INSERT INTO product_categories (product_id, category_id) VALUES (%s, %s)"
+        print(f"DEBUG SQL: associate_product_with_category INSERT: SQL='{insert_sql}', Params=({product_db_id}, {category_id})") # デバッグログ
         try:
             cursor.execute(insert_sql, (product_db_id, category_id))
             print(f"DEBUG: product_categories に紐付けを挿入: product_id={product_db_id}, category_id={category_id}") # デバッグログ
@@ -123,12 +127,14 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
     productsテーブルを更新、カテゴリを統合して紐付ける。
     """
     # 関連するraw_api_dataを全て取得 (processed_atがNULLのもの)
-    cursor.execute("""
+    select_raw_sql = """
         SELECT id, api_response_data, fetched_at
         FROM raw_api_data
         WHERE product_id = %s AND source_api = %s AND processed_at IS NULL
         ORDER BY fetched_at DESC, id DESC
-    """, (product_api_id, source_api_name))
+    """
+    print(f"DEBUG SQL: process_single_product_id_batch SELECT RAW: SQL='{select_raw_sql}', Params=(''{product_api_id}'', ''{source_api_name}'')") # デバッグログ
+    cursor.execute(select_raw_sql, (product_api_id, source_api_name))
     all_raw_data_for_product = cursor.fetchall()
 
     if not all_raw_data_for_product:
@@ -140,7 +146,6 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
     main_raw_data_row = all_raw_data_for_product[0]
     main_raw_api_data_id = main_raw_data_row[0]
     
-    # raw_json_data はすでにitemの中身なので、get('item', {}) は不要
     main_raw_json_data = json.loads(main_raw_data_row[1]) 
     main_item_data = main_raw_json_data 
     
@@ -192,32 +197,26 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
 
     # productsテーブルに挿入するデータをメインの生データから抽出
     title = clean_string(get_safe_value(main_item_data, ['title']))
-    print(f"DEBUG: 抽出されたタイトル (product_id: {product_api_id}): '{title}'") # ★追加デバッグログ★
+    print(f"DEBUG: 抽出されたタイトル (product_id: {product_api_id}): '{title}'") # デバッグログ
     # 「タイトルなし」をデフォルト値として使用
     if not title:
         title = "タイトルなし"
 
-    # ★修正: Duga APIのキー名に合わせる originaltitle -> original_title
     original_title = clean_string(get_safe_value(main_item_data, ['originaltitle']))
     caption = clean_string(get_safe_value(main_item_data, ['caption']))
     
-    # ★修正: release_date を優先し、なければ opendate を使用
+    # release_date を優先し、なければ opendate を使用
     release_date_str = clean_string(get_safe_value(main_item_data, ['releasedate']))
     if not release_date_str:
         release_date_str = clean_string(get_safe_value(main_item_data, ['opendate']))
     release_date = parse_date(release_date_str)
     
-    # ★修正: Duga APIのキー名に合わせる makername -> maker_name
     maker_name = clean_string(get_safe_value(main_item_data, ['makername']))
-    
-    # ★修正: Duga APIのキー名に合わせる itemno -> item_no
     item_no = clean_string(get_safe_value(main_item_data, ['itemno'])) 
     
     price = float(str(get_safe_value(main_item_data, ['price'], default='0')).replace('円', '').replace(',', '').replace('～', '')) # 円とカンマ、「～」を除去してfloatに変換
     volume = convert_to_int(get_safe_value(main_item_data, ['volume']), default=0)
     url = clean_string(get_safe_value(main_item_data, ['url']))
-    
-    # ★修正: Duga APIのキー名に合わせる affiliateurl -> affiliate_url
     affiliate_url = clean_string(get_safe_value(main_item_data, ['affiliateurl'])) 
     
     # Duga APIのJSON構造に合わせた画像URLの抽出
@@ -244,11 +243,14 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         print(f"警告: product_id (raw_api_data.product_id) が空のためスキップします (Source: {source_api_name}).")
         for raw_data_row in all_raw_data_for_product:
             update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
+            print(f"DEBUG SQL: Skipping product - UPDATE RAW PROCESSED: SQL='{update_raw_processed_sql}', Params=(''{datetime.now()}'', {raw_data_row[0]})") # デバッグログ
             cursor.execute(update_raw_processed_sql, (datetime.now(), raw_data_row[0]))
         return
 
     # データベースに製品が存在するか確認
-    cursor.execute("SELECT id FROM products WHERE product_id = %s", (product_api_id,))
+    select_product_sql = "SELECT id FROM products WHERE product_id = %s"
+    print(f"DEBUG SQL: SELECT PRODUCT: SQL='{select_product_sql}', Params=(''{product_api_id}'')") # デバッグログ
+    cursor.execute(select_product_sql, (product_api_id,))
     existing_product = cursor.fetchone()
 
     now = datetime.now()
@@ -263,19 +265,21 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
                 image_url_small = %s, image_url_medium = %s, image_url_large = %s,
                 jacket_url_small = %s, jacket_url_medium = %s, jacket_url_large = %s,
                 sample_movie_url = %s, sample_movie_capture_url = %s,
-                genre = %s, -- ★修正: JSONカラムを削除し、VARCHARのgenreを追加
+                genre = %s, 
                 source_api = %s, raw_api_data_id = %s, updated_at = %s
             WHERE product_id = %s
         """
-        cursor.execute(update_query, (
+        params = (
             title, original_title, caption, release_date, maker_name,
             item_no, price, volume, url, affiliate_url,
             image_url_small, image_url_medium, image_url_large,
             jacket_url_small, jacket_url_medium, jacket_url_large,
             sample_movie_url, sample_movie_capture_url,
-            main_genre_str, # ★修正: main_genre_str を渡す
+            main_genre_str, 
             source_api_for_products, main_raw_api_data_id, now, product_api_id
-        ))
+        )
+        print(f"DEBUG SQL: UPDATE PRODUCT: SQL='{update_query}', Params={params}") # デバッグログ
+        cursor.execute(update_query, params)
         print(f"製品を更新しました: Product ID={product_api_id}, Title='{title}'")
     else:
         insert_query = """
@@ -285,28 +289,30 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
                 image_url_small, image_url_medium, image_url_large,
                 jacket_url_small, jacket_url_medium, jacket_url_large,
                 sample_movie_url, sample_movie_capture_url,
-                genre, -- ★修正: JSONカラムを削除し、VARCHARのgenreを追加
+                genre, 
                 source_api, raw_api_data_id, created_at, updated_at
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
-        cursor.execute(insert_query, (
+        params = (
             product_api_id, title, original_title, caption, release_date, maker_name,
             item_no, price, volume, url, affiliate_url,
             image_url_small, image_url_medium, image_url_large,
             jacket_url_small, jacket_url_medium, jacket_url_large,
             sample_movie_url, sample_movie_capture_url,
-            main_genre_str, # ★修正: main_genre_str を渡す
+            main_genre_str, 
             source_api_for_products, main_raw_api_data_id, now, now
-        ))
+        )
+        print(f"DEBUG SQL: INSERT PRODUCT: SQL='{insert_query}', Params={params}") # デバッグログ
+        cursor.execute(insert_query, params)
         product_db_id = cursor.lastrowid 
         print(f"新しい製品を挿入しました: Product ID={product_api_id}, Title='{title}'")
 
     # カテゴリの分類と紐付け (products.id が確定した後に行う)
     if product_db_id:
         # 収集したジャンルを紐付け
-        if collected_genres: # デバッグログ
+        if collected_genres: 
             print(f"DEBUG: ジャンルを categories/product_categories に紐付けます。収集済み: {collected_genres}") 
         for genre_name in collected_genres:
             category_id = get_or_create_category(cursor, conn, "ジャンル", genre_name)
@@ -314,7 +320,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
             print(f"  製品ID {product_api_id} にジャンル '{genre_name}' を紐付けました。")
 
         # 収集した女優を紐付け
-        if collected_actresses: # デバッグログ
+        if collected_actresses: 
             print(f"DEBUG: 女優を categories/product_categories に紐付けます。収集済み: {collected_actresses}")
         for actress_name in collected_actresses:
             category_id = get_or_create_category(cursor, conn, "女優", actress_name)
@@ -329,7 +335,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
             print(f"  製品ID {product_api_id} にレーベル '{maker_name}' を紐付けました。")
 
         # 収集したシリーズを紐付け
-        if collected_series: # デバッグログ
+        if collected_series: 
             print(f"DEBUG: シリーズを categories/product_categories に紐付けます。収集済み: {collected_series}")
         for series_name in collected_series:
             category_id = get_or_create_category(cursor, conn, "シリーズ", series_name)
@@ -339,6 +345,7 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
         # 処理済みのraw_api_dataレコードにマークを付ける
         for raw_data_row in all_raw_data_for_product:
             update_raw_processed_sql = "UPDATE raw_api_data SET processed_at = %s WHERE id = %s"
+            print(f"DEBUG SQL: UPDATE RAW PROCESSED: SQL='{update_raw_processed_sql}', Params=(''{now}'', {raw_data_row[0]})") # デバッグログ
             cursor.execute(update_raw_processed_sql, (now, raw_data_row[0]))
 
     return 1 
@@ -368,12 +375,14 @@ def populate_products_and_categories_main_loop():
                 print("processed_atカラムは既に存在します。")
 
         # 未処理のユニークな (product_id, source_api) の組み合わせを取得
-        cursor.execute("""
+        select_distinct_sql = """
             SELECT DISTINCT product_id, source_api
             FROM raw_api_data
             WHERE processed_at IS NULL
             LIMIT 100 
-        """)
+        """
+        print(f"DEBUG SQL: SELECT DISTINCT PRODUCTS TO PROCESS: SQL='{select_distinct_sql}'") # デバッグログ
+        cursor.execute(select_distinct_sql)
         unique_product_ids_to_process = cursor.fetchall()
 
         if not unique_product_ids_to_process:
@@ -439,100 +448,109 @@ if __name__ == "__main__":
         if cursor_check.fetchone()[0] == 0:
             print("raw_api_dataテーブルに処理すべき'duga'データがありません。ダミーデータを挿入します。(これはPHPスクリプトが動くまでのテスト用です)")
             # product_id が同じで、異なるカテゴリを持つダミーデータを複数挿入
-            # Duga APIの出力形式に合わせたダミーデータに修正
-            dummy_api_data_1_raw_item = { 
-                "productid": "TEST_AGG_001",
-                "title": "集約テストタイトル",
-                "originaltitle": "Original Title Agg 1",
-                "caption": "集約テスト用のキャプションです1。",
-                "releasedate": "2024-01-01",
-                "opendate": "2024-01-05",
-                "makername": "集約メーカーX",
-                "itemno": "AGG-001",
-                "price": "1000円",
-                "volume": 60,
-                "url": "http://example.com/test/1",
-                "affiliateurl": "http://affiliate.example.com/test/1",
-                "posterimage": [{"small": "http://example.com/p_s1.jpg", "midium": "http://example.com/p_m1.jpg", "large": "http://example.com/p_l1.jpg"}],
-                "jacketimage": [{"small": "http://example.com/j_s1.jpg", "midium": "http://example.com/j_m1.jpg", "large": "http://example.com/j_l1.jpg"}],
-                "thumbnail": [{"image": "http://example.com/t_1.jpg"}, {"image": "http://example.com/t_2.jpg"}],
-                "samplemovie": [{"midium": {"movie": "http://example.com/mov1.mp4", "capture": "http://example.com/cap1.jpg"}}],
-                "category": {"data": [{"id": "GEN01", "name": "ジャンルA"}]},
-                "performer": {"data": [{"id": "ACT01", "name": "女優X"}]},
-                "series": {"name": "シリーズS1"},
-                "label": {"id": "LBL01", "name": "レーベルX"}
+            dummy_api_data_1_raw = {
+                "item": {
+                    "productid": "TEST_AGG_001",
+                    "title": "集約テストタイトル",
+                    "originaltitle": "Original Title Agg 1",
+                    "caption": "集約テスト用のキャプションです1。",
+                    "releasedate": "2024-01-01",
+                    "opendate": "2024-01-05",
+                    "makername": "集約メーカーX",
+                    "itemno": "AGG-001",
+                    "price": "1000円",
+                    "volume": 60,
+                    "url": "http://example.com/test/1",
+                    "affiliateurl": "http://affiliate.example.com/test/1",
+                    "posterimage": [{"small": "http://example.com/p_s1.jpg", "midium": "http://example.com/p_m1.jpg", "large": "http://example.com/p_l1.jpg"}],
+                    "jacketimage": [{"small": "http://example.com/j_s1.jpg", "midium": "http://example.com/j_m1.jpg", "large": "http://example.com/j_l1.jpg"}],
+                    "thumbnail": [{"image": "http://example.com/t_1.jpg"}, {"image": "http://example.com/t_2.jpg"}],
+                    "samplemovie": [{"midium": {"movie": "http://example.com/mov1.mp4", "capture": "http://example.com/cap1.jpg"}}],
+                    "category": {"data": [{"id": "GEN01", "name": "ジャンルA"}]},
+                    "performer": {"data": [{"id": "ACT01", "name": "女優X"}]},
+                    "series": {"name": "シリーズS1"},
+                    "label": {"id": "LBL01", "name": "レーベルX"}
+                }
             }
-            dummy_api_data_2_raw_item = { # 同じproductidだが、カテゴリが異なる
-                "productid": "TEST_AGG_001", 
-                "title": "集約テストタイトル",
-                "originaltitle": "Original Title Agg 1b",
-                "caption": "集約テスト用のキャプションです1b。",
-                "releasedate": "2024-01-02", # 日付を少しずらす
-                "opendate": "2024-01-06",
-                "makername": "集約メーカーX",
-                "itemno": "AGG-001",
-                "price": "1000円",
-                "volume": 65,
-                "url": "http://example.com/test/1b",
-                "affiliateurl": "http://affiliate.example.com/test/1b",
-                "posterimage": [{"small": "http://example.com/p_s1b.jpg", "midium": "http://example.com/p_m1b.jpg", "large": "http://example.com/p_l1b.jpg"}],
-                "jacketimage": [{"small": "http://example.com/j_s1b.jpg", "midium": "http://example.com/j_m1b.jpg", "large": "http://example.com/j_l1b.jpg"}],
-                "thumbnail": [{"image": "http://example.com/t_1b.jpg"}, {"image": "http://example.com/t_2b.jpg"}],
-                "samplemovie": [{"midium": {"movie": "http://example.com/mov1b.mp4", "capture": "http://example.com/cap1b.jpg"}}],
-                "category": {"data": [{"id": "GEN02", "name": "ジャンルB"}]}, # 異なるジャンル
-                "performer": {"data": [{"id": "ACT02", "name": "女優Y"}]},    # 異なる女優
-                "series": {"name": "シリーズS2"},                                # 異なるシリーズ
-                "label": {"id": "LBL01", "name": "レーベルX"}
+            dummy_api_data_2_raw = { # 同じproductidだが、カテゴリが異なる
+                "item": {
+                    "productid": "TEST_AGG_001", 
+                    "title": "集約テストタイトル",
+                    "originaltitle": "Original Title Agg 1b",
+                    "caption": "集約テスト用のキャプションです1b。",
+                    "releasedate": "2024-01-02", # 日付を少しずらす
+                    "opendate": "2024-01-06",
+                    "makername": "集約メーカーX",
+                    "itemno": "AGG-001",
+                    "price": "1000円",
+                    "volume": 65,
+                    "url": "http://example.com/test/1b",
+                    "affiliateurl": "http://affiliate.example.com/test/1b",
+                    "posterimage": [{"small": "http://example.com/p_s1b.jpg", "midium": "http://example.com/p_m1b.jpg", "large": "http://example.com/p_l1b.jpg"}],
+                    "jacketimage": [{"small": "http://example.com/j_s1b.jpg", "midium": "http://example.com/j_m1b.jpg", "large": "http://example.com/j_l1b.jpg"}],
+                    "thumbnail": [{"image": "http://example.com/t_1b.jpg"}, {"image": "http://example.com/t_2b.jpg"}],
+                    "samplemovie": [{"midium": {"movie": "http://example.com/mov1b.mp4", "capture": "http://example.com/cap1b.jpg"}}],
+                    "category": {"data": [{"id": "GEN02", "name": "ジャンルB"}]}, # 異なるジャンル
+                    "performer": {"data": [{"id": "ACT02", "name": "女優Y"}]},    # 異なる女優
+                    "series": {"name": "シリーズS2"},                                # 異なるシリーズ
+                    "label": {"id": "LBL01", "name": "レーベルX"}
+                }
             }
-            dummy_api_data_3_raw_item = {
-                "productid": "TEST_AGG_002",
-                "title": "個別テストタイトル",
-                "originaltitle": "Original Title Ind 1",
-                "caption": "個別テスト用のキャプションです。",
-                "releasedate": "2024-03-01",
-                "opendate": "2024-03-05",
-                "makername": "個別メーカーY",
-                "itemno": "IND-001",
-                "price": "2000円",
-                "volume": 120,
-                "url": "http://example.com/test/2",
-                "affiliateurl": "http://affiliate.example.com/test/2",
-                "posterimage": [{"small": "http://example.com/p_s2.jpg", "midium": "http://example.com/p_m2.jpg", "large": "http://example.com/p_l2.jpg"}],
-                "jacketimage": [{"small": "http://example.com/j_s2.jpg", "midium": "http://example.com/j_m2.jpg", "large": "http://example.com/j_l2.jpg"}],
-                "thumbnail": [{"image": "http://example.com/t_3.jpg"}],
-                "samplemovie": [{"midium": {"movie": "http://example.com/mov2.mp4", "capture": "http://example.com/cap2.jpg"}}],
-                "category": {"data": [{"id": "GEN03", "name": "ジャンルC"}]},
-                "performer": {"data": [{"id": "ACT03", "name": "女優Z"}]},
-                "series": {"name": "シリーズS3"},
-                "label": {"id": "LBL02", "name": "レーベルY"}
+            dummy_api_data_3_raw = {
+                "item": {
+                    "productid": "TEST_AGG_002",
+                    "title": "個別テストタイトル",
+                    "originaltitle": "Original Title Ind 1",
+                    "caption": "個別テスト用のキャプションです。",
+                    "releasedate": "2024-03-01",
+                    "opendate": "2024-03-05",
+                    "makername": "個別メーカーY",
+                    "itemno": "IND-001",
+                    "price": "2000円",
+                    "volume": 120,
+                    "url": "http://example.com/test/2",
+                    "affiliateurl": "http://affiliate.example.com/test/2",
+                    "posterimage": [{"small": "http://example.com/p_s2.jpg", "midium": "http://example.com/p_m2.jpg", "large": "http://example.com/p_l2.jpg"}],
+                    "jacketimage": [{"small": "http://example.com/j_s2.jpg", "midium": "http://example.com/j_m2.jpg", "large": "http://example.com/j_l2.jpg"}],
+                    "thumbnail": [{"image": "http://example.com/t_3.jpg"}],
+                    "samplemovie": [{"midium": {"movie": "http://example.com/mov2.mp4", "capture": "http://example.com/cap2.jpg"}}],
+                    "category": {"data": [{"id": "GEN03", "name": "ジャンルC"}]},
+                    "performer": {"data": [{"id": "ACT03", "name": "女優Z"}]},
+                    "series": {"name": "シリーズS3"},
+                    "label": {"id": "LBL02", "name": "レーベルY"}
+                }
             }
             # priceが数値のみのケース (Pythonの price 変換ロジックテスト用)
-            dummy_api_data_4_raw_item = {
-                "productid": "TEST_AGG_003",
-                "title": "価格数値テスト",
-                "releasedate": "2024-04-01",
-                "makername": "テストメーカーM",
-                "price": 1500, # 価格が数値で提供される場合
-                "url": "http://example.com/test/3",
-                "category": {"data": [{"name": "テストジャンル"}]},
-                "performer": {"data": [{"name": "テスト女優"}]}
+            dummy_api_data_4_raw = {
+                "item": {
+                    "productid": "TEST_AGG_003",
+                    "title": "価格数値テスト",
+                    "releasedate": "2024-04-01",
+                    "makername": "テストメーカーM",
+                    "price": 1500, # 価格が数値で提供される場合
+                    "url": "http://example.com/test/3",
+                    "category": {"data": [{"name": "テストジャンル"}]},
+                    "performer": {"data": [{"name": "テスト女優"}]}
+                }
             }
             # ジャンル、女優が空、または存在しないケースのテスト
-            dummy_api_data_5_raw_item = {
-                "productid": "TEST_AGG_004",
-                "title": "カテゴリなしテスト",
-                "releasedate": "2024-05-01",
-                "makername": "ノーカテゴリ",
-                "price": "500円",
-                "url": "http://example.com/test/4"
-                # category, performer, series, label は意図的に含めない
+            dummy_api_data_5_raw = {
+                "item": {
+                    "productid": "TEST_AGG_004",
+                    "title": "カテゴリなしテスト",
+                    "releasedate": "2024-05-01",
+                    "makername": "ノーカテゴリ",
+                    "price": "500円",
+                    "url": "http://example.com/test/4"
+                    # category, performer, series, label は意図的に含めない
+                }
             }
 
-            insert_raw_api_data_dummy(conn_check, dummy_api_data_1_raw_item, 'duga', 'TEST_AGG_001')
-            insert_raw_api_data_dummy(conn_check, dummy_api_data_2_raw_item, 'duga', 'TEST_AGG_001')
-            insert_raw_api_data_dummy(conn_check, dummy_api_data_3_raw_item, 'duga', 'TEST_AGG_002')
-            insert_raw_api_data_dummy(conn_check, dummy_api_data_4_raw_item, 'duga', 'TEST_AGG_003')
-            insert_raw_api_data_dummy(conn_check, dummy_api_data_5_raw_item, 'duga', 'TEST_AGG_004')
+            insert_raw_api_data_dummy(conn_check, dummy_api_data_1_raw, 'duga', 'TEST_AGG_001')
+            insert_raw_api_data_dummy(conn_check, dummy_api_data_2_raw, 'duga', 'TEST_AGG_001')
+            insert_raw_api_data_dummy(conn_check, dummy_api_data_3_raw, 'duga', 'TEST_AGG_002')
+            insert_raw_api_data_dummy(conn_check, dummy_api_data_4_raw, 'duga', 'TEST_AGG_003')
+            insert_raw_api_data_dummy(conn_check, dummy_api_data_5_raw, 'duga', 'TEST_AGG_004')
             print("カテゴリ集約テスト用のダミーデータをraw_api_dataテーブルに挿入しました。")
         else:
             print("raw_api_dataテーブルに処理すべき'duga'データが既に存在します。")
@@ -548,17 +566,18 @@ if __name__ == "__main__":
     populate_products_and_categories_main_loop()
 
 # insert_raw_api_data_dummy 関数は main ブロックでのみ使用される仮の関数です
-def insert_raw_api_data_dummy(conn, item_json_data, source_api_name, product_id_val):
+def insert_raw_api_data_dummy(conn, item_json_data_wrapper, source_api_name, product_id_val):
     cursor = conn.cursor()
     now = datetime.now()
     # PHPスクリプトが保存する形式 (itemの内容を直接JSON文字列として) に合わせる
-    # PHPスクリプトでは api_response_data に item の中身が直接入る
-    data_json_str = json.dumps(item_json_data, ensure_ascii=False)
+    # item_json_data_wrapper は {"item": {...}} 形式を想定
+    data_json_str = json.dumps(item_json_data_wrapper['item'], ensure_ascii=False) # 'item' キーの中身を直接保存
 
     insert_query = """
         INSERT INTO raw_api_data (product_id, api_response_data, source_api, fetched_at, updated_at, processed_at)
         VALUES (%s, %s, %s, %s, %s, NULL) 
     """
+    print(f"DEBUG SQL: INSERT RAW DUMMY: SQL='{insert_query}', Params=(''{product_id_val}'', ''{data_json_str[:100]}...'', ''{source_api_name}'', ''{now}'', ''{now}'')") # デバッグログ (長すぎるとログが見にくいので短縮)
     cursor.execute(insert_query, (product_id_val, data_json_str, source_api_name, now, now))
     conn.commit()
     print(f"raw_api_data (ダミー) を挿入しました (product_id: {product_id_val}, source_api: {source_api_name})。")
