@@ -198,7 +198,8 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
     main_raw_api_data_id = main_raw_data_row[0]
 
     main_raw_json_data = json.loads(main_raw_data_row[1])
-    main_item_data = main_raw_json_data # Duga APIのJSONはitemキーの中に直接データがあるため
+    # PHPスクリプトが'item'キーの中身を直接raw_api_data.api_response_dataに保存しているため、それを直接使用
+    main_item_data = main_raw_json_data 
 
     logger.debug(f"DEBUG: メインのitem_data (product_id: {product_api_id}): {main_item_data}")
 
@@ -213,7 +214,8 @@ def process_single_product_id_batch(cursor, conn, product_api_id: str, source_ap
 
     for raw_data_row in all_raw_data_for_product:
         current_raw_json_data = json.loads(raw_data_row[1])
-        current_item_data = current_raw_json_data # Duga APIのJSONはitemキーの中に直接データがあるため
+        # PHPスクリプトが'item'キーの中身を直接raw_api_data.api_response_dataに保存しているため、それを直接使用
+        current_item_data = current_raw_json_data 
 
         logger.debug(f"DEBUG: カテゴリ収集元のitem_data: {current_item_data}")
 
@@ -580,7 +582,7 @@ if __name__ == "__main__":
                 "jacketimage": [{"small": "http://example.com/j_s1.jpg", "midium": "http://example.com/j_m1.jpg", "large": "http://example.com/j_l1.jpg"}],
                 "thumbnail": [{"image": "http://example.com/t_1.jpg"}, {"image": "http://example.com/t_2.jpg"}],
                 "samplemovie": [{"midium": {"movie": "http://example.com/mov1.mp4", "capture": "http://example.com/cap1.jpg"}}],
-                "category": [{"data": {"id": "GEN01", "name": "ジャンルA"}}],
+                "category": [{"data": {"id": "13", "name": "フェチ"}}], # Duga APIのカテゴリ構造に合わせる
                 "performer": [{"data": {"id": "ACT01", "name": "女優X"}}],
                 "series": {"name": "シリーズS1"},
                 "label": {"id": "LBL01", "name": "レーベルX"}
@@ -602,7 +604,7 @@ if __name__ == "__main__":
                 "jacketimage": [{"small": "http://example.com/j_s1b.jpg", "midium": "http://example.com/j_m1b.jpg", "large": "http://example.com/j_l1b.jpg"}],
                 "thumbnail": [{"image": "http://example.com/t_1b.jpg"}, {"image": "http://example.com/t_2b.jpg"}],
                 "samplemovie": [{"midium": {"movie": "http://example.com/mov1b.mp4", "capture": "http://example.com/cap1b.jpg"}}],
-                "category": [{"data": {"id": "GEN02", "name": "ジャンルB"}}], # 異なるジャンル
+                "category": [{"data": {"id": "1", "name": "素人"}}], # 異なるジャンル
                 "performer": [{"data": {"id": "ACT02", "name": "女優Y"}}],    # 異なる女優
                 "series": {"name": "シリーズS2"},                                # 異なるシリーズ
                 "label": {"id": "LBL01", "name": "レーベルX"}
@@ -624,7 +626,7 @@ if __name__ == "__main__":
                 "jacketimage": [{"small": "http://example.com/j_s2.jpg", "midium": "http://example.com/j_m2.jpg", "large": "http://example.com/j_l2.jpg"}],
                 "thumbnail": [{"image": "http://example.com/t_3.jpg"}],
                 "samplemovie": [{"midium": {"movie": "http://example.com/mov2.mp4", "capture": "http://example.com/cap2.jpg"}}],
-                "category": [{"data": {"id": "GEN03", "name": "ジャンルC"}}],
+                "category": [{"data": {"id": "2", "name": "アダルト"}}],
                 "performer": [{"data": {"id": "ACT03", "name": "女優Z"}}],
                 "series": {"name": "シリーズS3"},
                 "label": {"id": "LBL02", "name": "レーベルY"}
@@ -683,7 +685,7 @@ def insert_raw_api_data_dummy(conn, item_json_data, source_api_name, product_id_
         INSERT INTO raw_api_data (product_id, api_response_data, source_api, fetched_at, updated_at, processed_at)
         VALUES (%s, %s, %s, %s, %s, NULL)
     """
-    logger.debug(f"DEBUG SQL: INSERT RAW DUMMY: SQL='{insert_id_val}'', ''{data_json_str[:100]}...'', ''{source_api_name}'', ''{now}'', ''{now}'')")
+    logger.debug(f"DEBUG SQL: INSERT RAW DUMMY: SQL='{insert_query}', Params=(''{product_id_val}'', ''{data_json_str[:100]}...'', ''{source_api_name}'', ''{now}'', ''{now}'')")
     cursor.execute(insert_query, (product_id_val, data_json_str, source_api_name, now, now))
     conn.commit()
     logger.info(f"raw_api_data (ダミー) を挿入しました (product_id: {product_id_val}, source_api: {source_api_name})。")
